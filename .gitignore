@@ -117,8 +117,7 @@ Thumbs.db
 *.tflite
 !data/models/.gitkeep
 
-# Audio files (ESC-50 dataset is large)
-ESC-50-master/audio/
+ESC-50-master/
 *.wav
 *.mp3
 *.ogg
