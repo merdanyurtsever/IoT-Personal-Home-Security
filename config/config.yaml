@@ -1,0 +1,116 @@
+# IoT Personal Home Security - Configuration
+# ==========================================
+
+# Application Settings
+app:
+  name: "IoT Home Security"
+  version: "0.1.0"
+  debug: false
+  log_level: "INFO"
+
+# Face Detection Settings
+face_detection:
+  enabled: true
+  model: "haar_cascade"  # Options: haar_cascade, mtcnn, retinaface, mediapipe
+  confidence_threshold: 0.8
+  min_face_size: [30, 30]
+  scale_factor: 1.1
+  min_neighbors: 5
+
+# Face Recognition Settings
+face_recognition:
+  enabled: true
+  model: "facenet"  # Options: facenet, arcface, dlib
+  embedding_size: 512
+  similarity_threshold: 0.6
+  known_faces_dir: "data/raw/faces/known"
+  
+# Sound Classification Settings
+sound_classification:
+  enabled: true
+  model: "mobilenet_audio"  # Options: mobilenet_audio, yamnet, custom_cnn
+  sample_rate: 44100
+  duration_seconds: 5
+  confidence_threshold: 0.7
+  # Security-relevant sound classes to detect
+  target_classes:
+    - "glass_breaking"
+    - "door_wood_knock"
+    - "dog"
+    - "siren"
+    - "crying_baby"
+    - "footsteps"
+    - "car_horn"
+
+# Camera Settings
+camera:
+  enabled: true
+  resolution: [640, 480]
+  fps: 30
+  device_id: 0  # 0 for default camera, or specific device path
+  flip_horizontal: false
+  flip_vertical: false
+
+# Microphone Settings
+microphone:
+  enabled: true
+  sample_rate: 44100
+  channels: 1
+  chunk_size: 1024
+  device_index: null  # null for default device
+
+# Motion Sensor (PIR) Settings
+motion_sensor:
+  enabled: true
+  gpio_pin: 17
+  sensitivity: "high"  # Options: low, medium, high
+  cooldown_seconds: 5
+
+# Alert Settings
+alerts:
+  # Local alarm (buzzer/speaker)
+  local_alarm:
+    enabled: true
+    gpio_pin: 18
+    duration_seconds: 10
+  
+  # Push notifications
+  push_notifications:
+    enabled: false
+    service: "firebase"  # Options: firebase, pushover, custom
+    firebase_config: "config/firebase_config.json"
+  
+  # SMS notifications
+  sms_notifications:
+    enabled: false
+    service: "twilio"
+    phone_numbers: []
+  
+  # MQTT for IoT hub integration
+  mqtt:
+    enabled: false
+    broker: "localhost"
+    port: 1883
+    topic: "home/security/alerts"
+    username: null
+    password: null
+
+# Model Paths
+models:
+  face_detection: "data/models/face_detection/haarcascade_frontalface_default.xml"
+  face_recognition: "data/models/face_recognition/facenet.tflite"
+  sound_classification: "data/models/sound_classification/audio_classifier.tflite"
+
+# Data Directories
+data:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  models_dir: "data/models"
+  logs_dir: "logs"
+
+# Raspberry Pi Specific Settings
+raspberry_pi:
+  use_picamera: true
+  gpio_enabled: true
+  optimize_for_edge: true
+  use_tflite: true

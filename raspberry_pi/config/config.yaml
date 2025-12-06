@@ -1,0 +1,87 @@
+# Raspberry Pi Deployment Configuration
+# =====================================
+# This is a stripped-down config optimized for Raspberry Pi
+
+app:
+  name: "IoT Home Security - RPi"
+  version: "0.1.0"
+  debug: false
+  log_level: "INFO"
+
+# Face Detection - using lightweight model
+face_detection:
+  enabled: true
+  model: "haar_cascade"  # Lightweight, works well on RPi
+  confidence_threshold: 0.7
+  min_face_size: [50, 50]
+
+# Face Recognition
+face_recognition:
+  enabled: true
+  model: "tflite"
+  threshold: 0.6
+  known_faces_dir: "/home/pi/security/faces/known"
+
+# Sound Classification - using TFLite for RPi
+sound_classification:
+  enabled: true
+  model: "tflite"
+  sample_rate: 22050  # Lower sample rate for RPi
+  confidence_threshold: 0.7
+  target_classes:
+    - "glass_breaking"
+    - "door_wood_knock"
+    - "dog"
+    - "siren"
+
+# Camera - Pi Camera settings
+camera:
+  enabled: true
+  resolution: [640, 480]  # Lower resolution for performance
+  fps: 15  # Lower FPS for RPi
+  use_picamera: true
+
+# Microphone
+microphone:
+  enabled: true
+  sample_rate: 22050
+  channels: 1
+  device_index: null
+
+# Motion Sensor (PIR)
+motion_sensor:
+  enabled: true
+  gpio_pin: 17
+  cooldown_seconds: 5
+
+# GPIO Pin Configuration
+gpio:
+  motion_sensor: 17  # BCM pin for PIR sensor
+  buzzer: 18         # BCM pin for buzzer
+  led_alert: 25      # BCM pin for alert LED
+  led_status: 24     # BCM pin for status LED
+
+# Alerts
+alerts:
+  local_alarm:
+    enabled: true
+    gpio_pin: 18
+    duration_seconds: 10
+  
+  mqtt:
+    enabled: true
+    broker: "localhost"
+    port: 1883
+    topic: "home/security/alerts"
+
+# Model Paths (TFLite models for RPi)
+models:
+  face_detection: "/home/pi/security/models/face_detection.tflite"
+  face_recognition: "/home/pi/security/models/face_recognition.tflite"
+  sound_classification: "/home/pi/security/models/audio_classifier.tflite"
+
+# Performance settings for Raspberry Pi
+performance:
+  use_threading: true
+  frame_skip: 2  # Process every Nth frame
+  audio_buffer_seconds: 1.0

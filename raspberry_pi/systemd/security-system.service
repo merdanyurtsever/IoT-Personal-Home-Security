@@ -1,0 +1,32 @@
+[Unit]
+Description=IoT Personal Home Security System
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/security
+ExecStart=/home/pi/security/raspberry_pi/scripts/start_service.sh
+ExecStop=/bin/kill -SIGTERM $MAINPID
+Restart=always
+RestartSec=10
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=security-system
+
+# Security
+NoNewPrivileges=true
+
+# Resource limits
+MemoryMax=512M
+CPUQuota=80%
+
+[Install]
+WantedBy=multi-user.target

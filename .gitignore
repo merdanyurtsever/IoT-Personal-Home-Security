@@ -1,0 +1,166 @@
+# IoT Personal Home Security - .gitignore
+# ========================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project specific
+# ================
+
+# Model files (can be large)
+*.h5
+*.hdf5
+*.pb
+*.pth
+*.pt
+*.onnx
+*.tflite
+!data/models/.gitkeep
+
+# Audio files (ESC-50 dataset is large)
+ESC-50-master/audio/
+*.wav
+*.mp3
+*.ogg
+*.flac
+
+# Image datasets (keep sample images)
+data/raw/faces/*.jpg
+data/raw/faces/*.png
+!data/raw/faces/.gitkeep
+!data/raw/faces/README.md
+
+# Processed data
+data/processed/*
+!data/processed/.gitkeep
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Secrets and credentials
+secrets/
+credentials/
+*.key
+*.pem
+firebase-adminsdk*.json
+.env.local
+.env.production
+
+# Large files
+*.zip
+*.tar.gz
+*.7z
+
+# Documents (Word files - keep for reference)
+# documents/
+
+# Trained models (should be stored in releases or cloud storage)
+data/models/**/*.h5
+data/models/**/*.tflite
+data/models/**/*.onnx
