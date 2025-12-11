@@ -1,0 +1,127 @@
+# Docker Compose for IoT Home Security
+# Provides consistent dev/deployment environment
+
+services:
+  # Main application container
+  security-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: iot-home-security:latest
+    container_name: home-security
+    
+    # Mount volumes for development
+    volumes:
+      # Source code (for development)
+      - ./src:/app/src:ro
+      - ./scripts:/app/scripts:ro
+      - ./config:/app/config:ro
+      
+      # Data persistence
+      - ./data:/app/data
+      - ./logs:/app/logs
+      
+      # Camera access (Linux)
+      - /dev/video0:/dev/video0
+    
+    # Camera device access
+    devices:
+      - /dev/video0:/dev/video0
+    
+    # Privileged for camera access (or use specific capabilities)
+    # privileged: true
+    cap_add:
+      - SYS_RAWIO
+    
+    # Environment variables
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+      - DISPLAY=${DISPLAY:-:0}
+    
+    # Network mode for GUI (if needed)
+    network_mode: host
+    
+    # For GUI applications (X11 forwarding)
+    # volumes:
+    #   - /tmp/.X11-unix:/tmp/.X11-unix:ro
+    # environment:
+    #   - DISPLAY=${DISPLAY}
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Resource limits (adjust for Pi)
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+    
+    # Default command
+    command: ["python", "scripts/camera_model_comparison.py"]
+
+  # Development container with GUI support
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: iot-home-security:latest
+    container_name: home-security-dev
+    
+    volumes:
+      - .:/app
+      - /dev/video0:/dev/video0
+      # X11 for GUI
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+    
+    devices:
+      - /dev/video0:/dev/video0
+    
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+    
+    network_mode: host
+    working_dir: /app
+    stdin_open: true
+    tty: true
+    
+    command: ["/bin/bash"]
+
+  # API service (production)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: iot-home-security:latest
+    container_name: home-security-api
+    
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config:ro
+      - ./logs:/app/logs
+    
+    ports:
+      - "8000:8000"
+    
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+    
+    restart: always
+    
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    
+    command: ["uvicorn", "src.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

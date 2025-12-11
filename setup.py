@@ -21,8 +21,7 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/yourusername/IoT-Personal-Home-Security",
-    packages=find_packages(where="src"),
-    package_dir={"": "src"},
+    packages=["src"],
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
@@ -56,7 +55,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "iot-security=iot_home_security.cli:main",
+            "iot-security=src.cli:main",
         ],
     },
 )

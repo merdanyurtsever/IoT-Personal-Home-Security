@@ -123,10 +123,13 @@ ESC-50-master/
 *.ogg
 *.flac
 
-# Image datasets (keep sample images)
-data/raw/faces/*.jpg
-data/raw/faces/*.png
+# Image datasets (keep folder structure, exclude face images)
+data/raw/faces/watch_list/**/*.jpg
+data/raw/faces/watch_list/**/*.jpeg
+data/raw/faces/watch_list/**/*.png
+data/raw/faces/uploads/**/*
 !data/raw/faces/.gitkeep
+!data/raw/faces/watch_list/.gitkeep
 !data/raw/faces/README.md
 
 # Processed data

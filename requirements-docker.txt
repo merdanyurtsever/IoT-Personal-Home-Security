@@ -1,0 +1,57 @@
+# Docker requirements - Python 3.11 compatible
+# Optimized for both x86_64 (development) and ARM64 (Raspberry Pi 4)
+# 
+# For project: Hareket Tetiklemeli ve Enerji Verimli Gömülü Güvenlik Sistemi
+# Models: RetinaFace, YOLO, ArcFace, MobileFaceNet
+
+# Core dependencies
+numpy>=1.24.0,<2.0
+opencv-python-headless>=4.8.0  # Headless for containers (no GUI)
+scipy>=1.11.0
+Pillow>=10.0.0
+
+# YAML/config handling
+PyYAML>=6.0
+python-dotenv>=1.0.0
+
+# API framework (optional)
+fastapi>=0.104.0
+uvicorn>=0.24.0
+python-multipart>=0.0.6
+
+# ML/DL frameworks - CPU only for Pi compatibility
+# ------------------------------------------------
+
+# ONNX Runtime - for running ArcFace, MobileFaceNet, RetinaFace
+onnxruntime>=1.16.0  # CPU version, works on ARM64
+
+# InsightFace - provides ArcFace and RetinaFace
+insightface>=0.7.3
+
+# Ultralytics YOLO - for YOLOv8 face detection
+ultralytics>=8.0.0
+
+# FaceNet alternative (smaller than full torch)
+# facenet-pytorch  # Requires torch, heavy
+
+# TensorFlow Lite - for optimized edge deployment
+# tflite-runtime  # Install separately on Pi
+
+# Optional: Full PyTorch for training (not needed for inference)
+# torch --index-url https://download.pytorch.org/whl/cpu
+# torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# Scikit-learn for metrics
+scikit-learn>=1.3.0
+
+# Logging and monitoring
+loguru>=0.7.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# Development tools
+black>=23.0.0
+isort>=5.12.0
+mypy>=1.6.0

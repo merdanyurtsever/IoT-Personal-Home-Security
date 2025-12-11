@@ -8,6 +8,27 @@ app:
   debug: false
   log_level: "INFO"
 
+# API Settings
+api:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8000
+  # CORS origins - set to specific origins in production
+  # For local network use: ["http://192.168.1.*:*", "http://localhost:*"]
+  cors_origins: ["*"]
+  # Authentication (modular - can be extended later)
+  auth:
+    enabled: false
+    # Future: api_key, jwt, oauth2
+    method: "none"
+
+# Database Settings
+database:
+  # SQLite database for face metadata and embeddings
+  faces_db: "data/faces.db"
+  # Enable WAL mode for better concurrent access
+  wal_mode: true
+
 # Face Detection Settings
 face_detection:
   enabled: true
@@ -20,10 +41,15 @@ face_detection:
 # Face Recognition Settings
 face_recognition:
   enabled: true
-  model: "facenet"  # Options: facenet, arcface, dlib
-  embedding_size: 512
+  # Embedding backend: dlib (128D, slower, accurate) or tflite (512D, faster on RPi)
+  model: "dlib"  # Options: dlib, tflite
+  embedding_size: 128  # 128 for dlib, 512 for tflite
   similarity_threshold: 0.6
-  known_faces_dir: "data/raw/faces/known"
+  watch_list_dir: "data/raw/faces/watch_list"
+  # Upload directory for API-uploaded faces
+  upload_dir: "data/raw/faces/uploads"
+  # TFLite model path (required if model: tflite)
+  tflite_model_path: "data/models/face_recognition/mobilefacenet.tflite"
   
 # Sound Classification Settings
 sound_classification:

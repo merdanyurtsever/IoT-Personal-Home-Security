@@ -9,7 +9,7 @@ class TestSoundClassifier:
     
     def test_classifier_initialization(self):
         """Test classifier initializes correctly."""
-        from src.iot_home_security.audio import SoundClassifier
+        from src.audio import SoundClassifier
         
         classifier = SoundClassifier(
             sample_rate=22050,
@@ -21,7 +21,7 @@ class TestSoundClassifier:
     
     def test_classify_returns_result(self):
         """Test classification returns a result."""
-        from src.iot_home_security.audio import SoundClassifier
+        from src.audio import SoundClassifier
         
         classifier = SoundClassifier()
         
@@ -36,7 +36,7 @@ class TestSoundClassifier:
     
     def test_classification_result_security_event(self):
         """Test ClassificationResult security event detection."""
-        from src.iot_home_security.audio.classifier import ClassificationResult
+        from src.audio import ClassificationResult
         
         # Security event
         result1 = ClassificationResult(
@@ -60,7 +60,7 @@ class TestAudioPreprocessor:
     
     def test_preprocessor_initialization(self):
         """Test preprocessor initializes correctly."""
-        from src.iot_home_security.audio import AudioPreprocessor
+        from src.audio import AudioPreprocessor
         
         preprocessor = AudioPreprocessor(
             sample_rate=22050,
@@ -73,7 +73,7 @@ class TestAudioPreprocessor:
     
     def test_pad_or_truncate_short_audio(self):
         """Test padding short audio."""
-        from src.iot_home_security.audio import AudioPreprocessor
+        from src.audio import AudioPreprocessor
         
         preprocessor = AudioPreprocessor(sample_rate=1000, duration=1.0)
         
@@ -86,7 +86,7 @@ class TestAudioPreprocessor:
     
     def test_pad_or_truncate_long_audio(self):
         """Test truncating long audio."""
-        from src.iot_home_security.audio import AudioPreprocessor
+        from src.audio import AudioPreprocessor
         
         preprocessor = AudioPreprocessor(sample_rate=1000, duration=1.0)
         
@@ -98,7 +98,7 @@ class TestAudioPreprocessor:
     
     def test_normalize(self):
         """Test audio normalization."""
-        from src.iot_home_security.audio import AudioPreprocessor
+        from src.audio import AudioPreprocessor
         
         preprocessor = AudioPreprocessor()
         
@@ -113,7 +113,7 @@ class TestFeatureExtractor:
     
     def test_extractor_initialization(self):
         """Test feature extractor initializes correctly."""
-        from src.iot_home_security.audio import FeatureExtractor
+        from src.audio import FeatureExtractor
         
         extractor = FeatureExtractor(
             sample_rate=22050,
@@ -127,7 +127,7 @@ class TestFeatureExtractor:
     
     def test_extract_mfcc_shape(self):
         """Test MFCC extraction returns correct shape."""
-        from src.iot_home_security.audio import FeatureExtractor
+        from src.audio import FeatureExtractor
         
         extractor = FeatureExtractor(n_mfcc=40)
         
@@ -138,8 +138,8 @@ class TestFeatureExtractor:
     
     def test_extract_all_returns_audio_features(self):
         """Test extract_all returns AudioFeatures object."""
-        from src.iot_home_security.audio import FeatureExtractor
-        from src.iot_home_security.audio.features import AudioFeatures
+        from src.audio import FeatureExtractor
+        from src.audio import AudioFeatures
         
         extractor = FeatureExtractor()
         

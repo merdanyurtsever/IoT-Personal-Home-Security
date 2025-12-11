@@ -1,0 +1,44 @@
+# ARM64 Linux Requirements
+# For face detection/recognition on ARM64 VMs and Raspberry Pi
+#
+# Install: pip install -r requirements-arm64.txt
+#
+# System dependencies (Ubuntu/Debian):
+#   sudo apt install cmake build-essential libopencv-dev libatlas-base-dev v4l-utils
+#
+# System dependencies (Fedora):
+#   sudo dnf install cmake gcc-c++ opencv-devel atlas-devel v4l-utils
+
+# Core - OpenCV without GUI dependencies (smaller footprint)
+opencv-python-headless>=4.8.0
+
+# NumPy for array operations
+numpy>=1.24.0
+
+# Face Detection - MediaPipe (works on ARM64 Linux)
+# Comment out if not needed - haar_cascade and opencv_dnn work without it
+mediapipe>=0.10.0
+
+# Face Recognition - dlib-based (OPTIONAL - slow to build on ARM64)
+# Note: dlib may require cmake and build tools on ARM64
+# Building can take 10-30 minutes. Skip if you only need detection.
+# sudo apt install cmake build-essential
+# dlib>=19.24.0
+# face-recognition>=1.3.0
+
+# TFLite Runtime for edge inference (ARM64 optimized)
+# Choose ONE of these based on your platform:
+# For Raspberry Pi OS: tflite-runtime
+# For generic ARM64 Linux: tflite-runtime or ai-edge-litert
+# tflite-runtime>=2.14.0
+
+# API Server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6  # For file uploads
+
+# Configuration
+pyyaml>=6.0
+
+# Image processing utilities
+Pillow>=10.0.0

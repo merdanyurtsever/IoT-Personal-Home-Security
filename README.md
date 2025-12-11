@@ -1,227 +1,310 @@
 # IoT Personal Home Security System
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-4%2F5-red.svg)](https://www.raspberrypi.org/)
+A **threat detection** security system for Raspberry Pi using **face recognition** and **sound classification**.
 
-An intelligent home security system combining **face recognition** and **environmental sound classification** for comprehensive threat detection. Designed to run on Raspberry Pi for edge inference.
+> **Key Concept**: This system detects people you want to be **alerted about** — either by their photo (watch list) or by physical features (threat profile). It's designed to protect you by identifying predetermined threats, not to distinguish "known vs unknown" people.
 
-## 🎯 Features
+**Target:** Raspberry Pi 4 (4GB+ RAM)  
+**Dev:** Windows/Linux x86 PCs, ARM64 VMs for testing
 
-- **Face Detection & Recognition** - Identify known vs unknown individuals
-- **Sound Classification** - Detect security-relevant sounds (glass breaking, door knocks, alarms)
-- **Motion Detection** - PIR sensor integration for motion-triggered alerts
-- **Multi-channel Alerts** - Local alarm, push notifications, SMS, MQTT
-- **Edge Deployment** - Optimized for Raspberry Pi with TensorFlow Lite
-- **Modular Architecture** - Easy to extend and customize
+---
 
-## 🏗️ Project Structure
+## What It Does
+
+- **Watch List Detection** → Identifies specific people you registered (by photo)
+- **Threat Profile Detection** → Detects people matching attributes (glasses, beard, tattoos, etc.)
+- **Sound Classification** → Detects glass breaking, door knocks, alarms
+- **Motion Trigger** → PIR sensor wakes up camera on motion
+- **Alerts** → Buzzer, LED, push notifications, SMS, MQTT
+
+---
+
+## Face Detection & Recognition Backends
+
+### Face Detection (default: `opencv_dnn`)
+
+| Backend | Description | Dependencies |
+|---------|-------------|--------------|
+| `opencv_dnn` | **Default** - SSD ResNet, works everywhere | OpenCV only |
+| `haar_cascade` | Classic OpenCV Haar Cascades | OpenCV only |
+| `mediapipe` | Google MediaPipe, fast on ARM64 | `pip install mediapipe` |
+
+### Face Recognition/Embedding (default: `opencv_dnn`)
+
+| Backend | Description | Dependencies |
+|---------|-------------|--------------|
+| `opencv_dnn` | **Default** - OpenFace 128D embeddings | OpenCV only |
+| `mobilenetv2` | Keras MobileNetV2 512D embeddings | TensorFlow |
+| `tflite` | TFLite model for edge deployment | tflite-runtime |
+| `dlib` | dlib/face_recognition 128D | dlib (requires compilation) |
+
+```python
+from src.face import FaceDetector, FaceRecognizer
+
+# Defaults work on x86, ARM64, and Raspberry Pi
+detector = FaceDetector()  # Uses opencv_dnn
+recognizer = FaceRecognizer()  # Uses opencv_dnn (OpenFace)
+
+# Or explicitly specify backend
+detector = FaceDetector(backend="mediapipe")
+recognizer = FaceRecognizer(model="mobilenetv2")
+```
+
+---
+
+## Detection Modes
+
+| Mode | Description |
+|------|-------------|
+| `WATCH_LIST` | Match faces against photos you registered |
+| `THREAT_PROFILE` | Match faces by attributes (glasses, beard, etc.) |
+| `EMBEDDING_FIRST` | Try photo match first, fallback to attributes |
+| `ATTRIBUTE_FIRST` | Try attributes first, fallback to photo match |
+| `BOTH` | Run both methods, combine results |
+
+### Example: Attribute-Based Detection
+
+```python
+from src.face import (
+    FaceSecurityPipeline, DetectionMode, FaceDetector,
+    AttributeFilter, FaceAttribute, HaarAttributeDetector
+)
+
+# Detect people with specific features (no photos needed)
+pipeline = FaceSecurityPipeline(
+    detector=FaceDetector(),
+    mode=DetectionMode.ATTRIBUTE_ONLY,
+    attribute_detector=HaarAttributeDetector()
+)
+
+# Alert when detecting: person with glasses + beard + tattoo
+pipeline.add_attribute_filter(
+    "threat_profile_1",
+    AttributeFilter()
+        .require(FaceAttribute.GLASSES)
+        .require(FaceAttribute.BEARD)
+        .require(FaceAttribute.TATTOO)
+)
+```
+
+---
+
+## Quick Start
+
+### 1. Setup (Pick One)
+
+```bash
+# Development PC (Windows/Linux)
+python -m venv .venv
+source .venv/bin/activate    # Linux/Mac
+# .venv\Scripts\activate     # Windows
+pip install -r requirements.txt
+pip install -e .
+
+# ARM64 VM (for testing)
+pip install -r requirements-arm64.txt
+pip install -e .
+
+# Raspberry Pi
+./scripts/install.sh --pi
+```
+
+### 2. Run
+
+```bash
+./run.sh demo        # Test all components
+./run.sh start       # Start security system
+./run.sh api         # Start REST API only
+```
+
+---
+
+## Project Structure
 
 ```
 IoT-Personal-Home-Security/
-├── config/                     # Configuration files
-│   ├── config.yaml            # Main configuration
-│   └── logging.yaml           # Logging configuration
 │
-├── data/                       # Data directories
-│   ├── raw/faces/             # Face images for training
-│   ├── processed/             # Preprocessed data
-│   └── models/                # Trained models
+├── main.py                    # Main entry point
+├── src/                       # All source code (flat)
+│   ├── face.py                # Face detection, recognition & attributes
+│   ├── face_service.py        # Watch list database & processing
+│   ├── audio.py               # Sound classification
+│   ├── sensors.py             # Camera, microphone, PIR
+│   ├── alerts.py              # Notifications & alarms
+│   ├── api.py                 # REST API
+│   └── cli.py                 # Command-line interface
 │
-├── docs/                       # Documentation
-│   ├── architecture.md        # System architecture
-│   ├── hardware_setup.md      # Hardware wiring guide
-│   ├── model_training.md      # Training guide
-│   └── deployment.md          # Deployment guide
+├── config/                    # Configuration files
+├── data/
+│   ├── raw/faces/watch_list/  # Put photos of people to watch here
+│   └── models/                # Trained .tflite models
 │
-├── notebooks/                  # Jupyter notebooks
-│   ├── 01_face_detection_analysis.ipynb
-│   ├── 02_face_recognition_training.ipynb
-│   ├── 03_sound_classification_training.ipynb
-│   └── 04_model_optimization.ipynb
-│
-├── src/iot_home_security/      # Main Python package
-│   ├── face/                  # Face detection & recognition
-│   ├── audio/                 # Sound classification
-│   ├── sensors/               # Sensor interfaces
-│   └── alerts/                # Notification system
-│
-├── raspberry_pi/               # Raspberry Pi deployment
-│   ├── main.py               # Main entry point
-│   ├── config/               # RPi-specific config
-│   ├── scripts/              # Installation scripts
-│   └── systemd/              # Service files
-│
-├── tests/                      # Unit tests
-│
-├── ESC-50-master/              # Sound classification dataset
-│
-└── documents/                  # Project documents
+├── notebooks/                 # Jupyter notebooks for training
+├── tests/                     # Unit tests
+└── ESC-50-master/             # Sound classification dataset
 ```
 
-## 🚀 Quick Start
+---
 
-### Development Setup
+## How It Works
 
-```bash
-# Clone repository
-git clone https://github.com/yourusername/IoT-Personal-Home-Security.git
-cd IoT-Personal-Home-Security
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# or: venv\Scripts\activate  # Windows
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Install package in development mode
-pip install -e .
+```
+Motion Detected → Camera Activates → Face Detected?
+                                          │
+                        ┌─────────────────┴─────────────────┐
+                        ▼                                   ▼
+               On Watch List?                    Matches Threat Profile?
+                   OR                                  (attributes)
+                        │                                   │
+                        ▼                                   ▼
+                   ALERT! 🚨                           ALERT! 🚨
 ```
 
-### Training Models
+---
 
-1. **Face Recognition:**
-   - Add face images to `data/raw/faces/known/<person_name>/`
-   - Run `notebooks/02_face_recognition_training.ipynb`
+## Commands
 
-2. **Sound Classification:**
-   - Download ESC-50 audio files to `ESC-50-master/audio/`
-   - Run `notebooks/03_sound_classification_training.ipynb`
+| Command | What It Does |
+|---------|--------------|
+| `./run.sh install` | Install dependencies |
+| `./run.sh start` | Start security system |
+| `./run.sh stop` | Stop security system |
+| `./run.sh demo` | Test all components |
+| `./run.sh test` | Run unit tests |
+| `./run.sh api` | Start Face Management API |
+| `./run.sh logs` | View logs |
+| `./run.sh status` | Check if running |
 
-3. **Optimize for Raspberry Pi:**
-   - Run `notebooks/04_model_optimization.ipynb`
-   - Export TFLite models to `data/models/`
+---
 
-### Raspberry Pi Deployment
+## Add People to Watch List
 
-```bash
-# Transfer to Raspberry Pi
-rsync -avz . pi@raspberrypi:/home/pi/security/
+### Method 1: By Photo (Watch List)
 
-# On Raspberry Pi
-cd /home/pi/security
-chmod +x raspberry_pi/scripts/install.sh
-./raspberry_pi/scripts/install.sh
+1. Create a folder with the person's name:
+   ```
+   data/raw/faces/watch_list/
+   └── john_doe/
+       ├── photo1.jpg
+       ├── photo2.jpg
+       └── ... (5-10 photos)
+   ```
 
-# Start the service
-sudo systemctl start security-system
+2. Train the model:
+   ```bash
+   jupyter notebook notebooks/02_face_recognition_training.ipynb
+   ```
+
+3. Export to TFLite:
+   ```bash
+   jupyter notebook notebooks/04_model_optimization.ipynb
+   ```
+
+### Method 2: By Attributes (Threat Profile)
+
+No photos needed! Define physical features to detect:
+
+```python
+# In your code or config
+pipeline.add_attribute_filter(
+    "suspicious_profile",
+    AttributeFilter()
+        .require(FaceAttribute.SUNGLASSES)
+        .require(FaceAttribute.HAT)
+        .require(FaceAttribute.MASK)
+)
 ```
 
-See [Deployment Guide](docs/deployment.md) for detailed instructions.
+**Available Attributes:**
+- Eyewear: `GLASSES`, `SUNGLASSES`
+- Facial Hair: `BEARD`, `MUSTACHE`
+- Hair: `BALD`, `BLONDE_HAIR`, `BROWN_HAIR`, `BLACK_HAIR`, `RED_HAIR`, `GRAY_HAIR`
+- Accessories: `HAT`, `MASK`, `TATTOO`
+- Age: `YOUNG`, `MIDDLE_AGED`, `SENIOR`
+- Gender: `MALE`, `FEMALE`
 
-## 🔧 Hardware Requirements
+---
 
-### Minimum
-- Raspberry Pi 4 (2GB RAM)
-- Pi Camera Module v2
-- USB Microphone
-- MicroSD Card (32GB)
+## Configuration
 
-### Recommended
-- Raspberry Pi 4/5 (4GB+ RAM)
-- Pi Camera Module v3
-- USB/I2S MEMS Microphone
-- PIR Motion Sensor (HC-SR501)
-- Buzzer & LED indicators
-- Coral USB Accelerator (for faster inference)
-
-See [Hardware Setup Guide](docs/hardware_setup.md) for wiring diagrams.
-
-## 📊 Performance
-
-| Model | Accuracy | Inference Time (RPi 4) |
-|-------|----------|------------------------|
-| Face Detection (Haar Cascade) | 85% | ~30ms |
-| Face Recognition (FaceNet) | 92% | ~80ms |
-| Sound Classification (CNN) | 75% | ~150ms |
-
-*Performance varies based on configuration and optimization settings.*
-
-## 🔒 Security Events Detected
-
-### Face Recognition
-- ✅ Known person detected (welcome)
-- ⚠️ Unknown person detected (alert)
-- 📸 Face logged with timestamp
-
-### Sound Classification
-- 🔊 Glass breaking
-- 🚪 Door knock
-- 🐕 Dog barking
-- 🚨 Sirens
-- 👶 Baby crying
-- 👣 Footsteps
-
-## 📝 Configuration
-
-Main configuration in `config/config.yaml`:
+Edit `config/config.yaml`:
 
 ```yaml
 face_detection:
   enabled: true
-  model: "haar_cascade"
   confidence_threshold: 0.8
 
 sound_classification:
   enabled: true
-  confidence_threshold: 0.7
   target_classes:
-    - "glass_breaking"
-    - "door_wood_knock"
-    - "siren"
+    - glass_breaking
+    - door_wood_knock
+    - siren
 
 alerts:
   local_alarm:
     enabled: true
     gpio_pin: 18
-  push_notifications:
-    enabled: false
 ```
 
-## 🧪 Testing
+---
+
+## Hardware (Raspberry Pi)
+
+### Required
+- Raspberry Pi 4 (4GB+)
+- Pi Camera Module
+- USB Microphone
+- 32GB+ MicroSD
+
+### Optional
+- PIR Motion Sensor (GPIO 17)
+- Buzzer (GPIO 18)
+- LEDs (GPIO 24, 25)
+
+See [DOCS.md](DOCS.md) for wiring diagrams.
+
+---
+
+## Deploy to Raspberry Pi
 
 ```bash
-# Run all tests
-pytest
+# On Pi
+git clone <this-repo> ~/security
+cd ~/security
+./scripts/install.sh --pi
 
-# Run with coverage
-pytest --cov=src
+# Start
+./run.sh start
 
-# Run specific test file
-pytest tests/test_face_detection.py
+# Or run as service (auto-starts on boot)
+sudo systemctl enable security-system
+sudo systemctl start security-system
 ```
 
-## 📚 Documentation
+---
 
-- [Architecture Overview](docs/architecture.md)
-- [Hardware Setup Guide](docs/hardware_setup.md)
-- [Model Training Guide](docs/model_training.md)
-- [Deployment Guide](docs/deployment.md)
-- [Raspberry Pi README](raspberry_pi/README.md)
+## Testing
 
-## 🤝 Contributing
+```bash
+./run.sh test              # All tests
+./run.sh test --coverage   # With coverage report
+pytest tests/              # Direct pytest
+```
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+---
 
-## 📄 License
+## Full Documentation
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+See **[DOCS.md](DOCS.md)** for:
+- Architecture details
+- Hardware wiring diagrams
+- Model training guide
+- Deployment instructions
+- Troubleshooting
 
-## 🙏 Acknowledgments
+---
 
-- [ESC-50 Dataset](https://github.com/karolpiczak/ESC-50) for environmental sound classification
-- OpenCV for computer vision capabilities
-- TensorFlow/TensorFlow Lite for machine learning
-- Raspberry Pi Foundation for edge computing platform
+## License
 
-## 📧 Contact
-
-Your Name - your.email@example.com
-
-Project Link: [https://github.com/yourusername/IoT-Personal-Home-Security](https://github.com/yourusername/IoT-Personal-Home-Security)
+MIT License - see [LICENSE](LICENSE)
