@@ -20,7 +20,6 @@ from src import (
     FaceDetector,
     FaceRecognizer,
     FaceRecognizerService,
-    FaceCategory,
     SoundClassifier,
     CameraInterface,
     MicrophoneInterface,
@@ -28,7 +27,6 @@ from src import (
     NotificationManager,
     LocalAlarm,
     crop_face,
-    create_app,
 )
 
 
@@ -433,14 +431,17 @@ def main():
         if args.api_only:
             # Run only API server
             system.logger.info("Running in API-only mode")
+            system.running = True  # Set running flag for signal handler
             system._start_api_server()
             # Keep running until interrupted
-            while True:
+            while system.running:
                 time.sleep(1)
         else:
             system.start()
     except KeyboardInterrupt:
-        pass
+        system.logger.info("Interrupted by user")
+    except Exception as e:
+        system.logger.error(f"Fatal error: {e}")
     finally:
         system.stop()
 
