@@ -73,4 +73,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import cv2; import numpy; print('OK')" || exit 1
 
 # Default command - can be overridden
-CMD ["python", "-m", "src.cli", "--help"]
+CMD ["python", "-m", "src.cli", "test"]

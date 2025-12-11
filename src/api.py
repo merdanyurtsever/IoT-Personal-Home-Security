@@ -12,6 +12,7 @@ import json
 import logging
 import shutil
 import uuid
+import threading
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -525,6 +526,50 @@ async def stream_job_status(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# -----------------------------------------------------------------------------
+# Pipeline Endpoints
+# -----------------------------------------------------------------------------
+
+# Global pipeline instance
+_pipeline: Optional["FaceSecurityPipeline"] = None
+_pipeline_thread: Optional[threading.Thread] = None
+
+@router.post("/pipeline/start")
+async def start_pipeline():
+    """Start the face detection/recognition pipeline in background."""
+    global _pipeline, _pipeline_thread
+    
+    from .face import FaceSecurityPipeline, FaceDetector, FaceRecognizer
+    from .sensors import CameraInterface
+    
+    if _pipeline_thread and _pipeline_thread.is_alive():
+        return {"status": "already_running"}
+    
+    camera = CameraInterface()
+    detector = FaceDetector(backend="opencv_dnn")
+    recognizer = FaceRecognizer(model="opencv_dnn")
+    
+    _pipeline = FaceSecurityPipeline(
+        camera=camera,
+        detector=detector,
+        recognizer=recognizer,
+    )
+    
+    def run_pipeline():
+        _pipeline.run(on_event=lambda e: logger.info(f"Event: {e}"))
+    
+    _pipeline_thread = threading.Thread(target=run_pipeline, daemon=True)
+    _pipeline_thread.start()
+    
+    return {"status": "started"}
+
+@router.post("/pipeline/stop")
+async def stop_pipeline():
+    """Stop the background pipeline."""
+    # Implementation would need a stop flag in FaceSecurityPipeline
+    pass
 
 
 # -----------------------------------------------------------------------------

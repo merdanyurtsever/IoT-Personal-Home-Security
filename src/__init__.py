@@ -20,6 +20,7 @@ from .face import (
     HaarCascadeDetector,
     MediaPipeDetector,
     OpenCVDNNDetector,
+    DlibFaceDetector,
     FaceRecognizer,
     RecognitionResult,
     FaceCategory,
@@ -77,6 +78,7 @@ from .api import router, create_app, set_face_service, get_face_service
 __all__ = [
     "crop_face", "align_face", "preprocess_face", "compute_face_quality",
     "FaceDetector", "DetectedFace", "FaceRecognizer", "RecognitionResult", "FaceCategory",
+    "HaarCascadeDetector", "MediaPipeDetector", "OpenCVDNNDetector", "DlibFaceDetector",
     "FaceSecurityPipeline", "FaceEvent",
     "FaceDatabase", "FaceRecord", "FaceStatus", "FaceType", "ProcessingJob",
     "FaceProcessingQueue", "ProcessingEvent", "ProcessingEventType", "FaceRecognizerService",

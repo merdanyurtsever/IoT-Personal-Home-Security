@@ -14,9 +14,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Tuple, Union
+from typing import Any, Dict, Generator, List, Optional, Tuple, Union, TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from .face import FaceRecognizer
 
 logger = logging.getLogger(__name__)
 
@@ -782,7 +785,7 @@ class FaceProcessingQueue:
     def __init__(
         self,
         database: FaceDatabase,
-        recognizer: FaceRecognizer,
+        recognizer: "FaceRecognizer",
         max_workers: int = 1,  # Single worker for RPi resource constraints
         auto_start: bool = True,
     ):

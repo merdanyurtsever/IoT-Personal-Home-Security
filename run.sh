@@ -1,35 +1,40 @@
 #!/bin/bash
 #
-# IoT Home Security - Universal Run Script
-# =========================================
+# IoT Home Security - Universal Run Script (Container-First)
+# ===========================================================
 #
-# One-liner script to run various components of the security system.
+# All Python commands run inside Docker containers by default.
+# Use --local flag to run with local venv (for development without Docker).
 #
 # Usage:
 #   ./run.sh <command> [options]
 #
 # Commands:
-#   install         - Install the package (dev mode or production)
-#   start           - Start the security system
-#   stop            - Stop the security system (if running as service)
-#   api             - Start only the Face Management API
+#   build           - Build Docker image
+#   start           - Start the security system (container)
+#   stop            - Stop containers
+#   api             - Start the Face Management API
 #   test            - Run tests
 #   detect          - Test face detection
 #   recognize       - Test face recognition
 #   classify        - Test sound classification
 #   camera          - Test camera
-#   demo            - Run a demo showing all features
+#   demo            - Run demo showing all features
+#   shell           - Open shell in container
+#   logs            - View container logs
 #   help            - Show this help message
 #
+# Options:
+#   --local         Run with local venv instead of Docker
+#   --rebuild       Force rebuild Docker image
+#
 # Examples:
-#   ./run.sh install              # Install in dev mode
-#   ./run.sh install --prod       # Install for production
-#   ./run.sh start                # Start the system
-#   ./run.sh start --debug        # Start with debug output
-#   ./run.sh api                  # Start API server only
-#   ./run.sh test                 # Run all tests
-#   ./run.sh detect --image photo.jpg
-#   ./run.sh camera --duration 10
+#   ./run.sh build                  # Build container
+#   ./run.sh start                  # Start system in container
+#   ./run.sh api                    # Start API server
+#   ./run.sh detect --camera        # Live detection with camera
+#   ./run.sh shell                  # Debug inside container
+#   ./run.sh start --local          # Use local venv (no Docker)
 #
 
 set -e
@@ -47,9 +52,15 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 # Configuration
-VENV_PATH="${SCRIPT_DIR}/venv"
+DOCKER_IMAGE="iot-home-security:latest"
+DOCKER_COMPOSE="docker compose"
+VENV_PATH="${SCRIPT_DIR}/.venv"
 CONFIG_PATH="${SCRIPT_DIR}/config/config.yaml"
 PI_CONFIG_PATH="${SCRIPT_DIR}/raspberry_pi/config/config.yaml"
+
+# Mode flags
+USE_LOCAL=""
+FORCE_REBUILD=""
 
 # Detect if on Raspberry Pi
 is_raspberry_pi() {
@@ -68,13 +79,115 @@ print_warning() { echo -e "${YELLOW}⚠ $1${NC}"; }
 print_error() { echo -e "${RED}✗ $1${NC}"; }
 print_info() { echo -e "${CYAN}ℹ $1${NC}"; }
 
+# ============================================================
+# DOCKER FUNCTIONS (Primary Mode)
+# ============================================================
+
+# Check if Docker is available
+check_docker() {
+    if ! command -v docker &> /dev/null; then
+        print_error "Docker not found. Install Docker or use --local flag."
+        exit 1
+    fi
+    if ! docker info &> /dev/null; then
+        print_error "Docker daemon not running. Start Docker or use --local flag."
+        exit 1
+    fi
+}
+
+# Build Docker image if needed
+ensure_image() {
+    if [[ -n "$FORCE_REBUILD" ]] || ! docker image inspect "$DOCKER_IMAGE" &> /dev/null; then
+        print_info "Building Docker image..."
+        docker build -t "$DOCKER_IMAGE" .
+        print_success "Image built: $DOCKER_IMAGE"
+    fi
+}
+
+# Run command in container
+docker_run() {
+    local interactive=""
+    local devices=""
+    local display_args=""
+    local port_args=""
+    
+    # Check for camera access
+    if [[ "$*" == *"camera"* ]] || [[ "$*" == *"--camera"* ]] || [[ "$*" == *"video"* ]]; then
+        if [[ -e /dev/video0 ]]; then
+            devices="--device /dev/video0"
+            print_info "Camera device /dev/video0 attached"
+        else
+            print_warning "No camera device found at /dev/video0"
+        fi
+    fi
+    
+    # Enable X11 for display (for camera preview windows)
+    if [[ -n "$DISPLAY" ]]; then
+        xhost +local:docker 2>/dev/null || true
+        display_args="-e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix:ro"
+    fi
+    
+    # Interactive mode for TTY
+    if [[ -t 0 ]] && [[ -t 1 ]]; then
+        interactive="-it"
+    fi
+    
+    docker run --rm $interactive \
+        -v "$SCRIPT_DIR/src:/app/src:ro" \
+        -v "$SCRIPT_DIR/config:/app/config:ro" \
+        -v "$SCRIPT_DIR/data:/app/data" \
+        -v "$SCRIPT_DIR/logs:/app/logs" \
+        -v "$SCRIPT_DIR/scripts:/app/scripts:ro" \
+        -v "$SCRIPT_DIR/tests:/app/tests:ro" \
+        $devices \
+        $display_args \
+        "$DOCKER_IMAGE" \
+        "$@"
+}
+
+# Run command in container with port binding (for API)
+docker_run_with_port() {
+    local port="${1:-8000}"
+    shift
+    
+    local interactive=""
+    
+    # Interactive mode for TTY
+    if [[ -t 0 ]] && [[ -t 1 ]]; then
+        interactive="-it"
+    fi
+    
+    docker run --rm $interactive \
+        -v "$SCRIPT_DIR/src:/app/src:ro" \
+        -v "$SCRIPT_DIR/config:/app/config:ro" \
+        -v "$SCRIPT_DIR/data:/app/data" \
+        -v "$SCRIPT_DIR/logs:/app/logs" \
+        -p "$port:8000" \
+        "$DOCKER_IMAGE" \
+        "$@"
+}
+
+# ============================================================
+# LOCAL VENV FUNCTIONS (Fallback Mode)
+# ============================================================
+
 # Ensure virtual environment exists and activate it
 ensure_venv() {
     if [[ ! -d "$VENV_PATH" ]]; then
-        print_info "Creating virtual environment..."
+        print_info "Creating virtual environment at $VENV_PATH..."
         python3 -m venv "$VENV_PATH"
+        source "$VENV_PATH/bin/activate"
+        pip install --upgrade pip wheel
+        if is_raspberry_pi; then
+            pip install -r requirements-pi.txt
+        else
+            pip install -r requirements.txt
+        fi
+        pip install -e .
+    else
+        source "$VENV_PATH/bin/activate"
     fi
-    source "$VENV_PATH/bin/activate"
+    export PYTHONPATH="${SCRIPT_DIR}/src:${PYTHONPATH}"
 }
 
 # Get the right config file
@@ -86,167 +199,117 @@ get_config() {
     fi
 }
 
+# ============================================================
+# COMMAND IMPLEMENTATIONS
+# ============================================================
+
 # Show help
 show_help() {
-    print_header "IoT Home Security - Run Script"
+    print_header "IoT Home Security - Container-First Run Script"
     cat << 'EOF'
 Usage: ./run.sh <command> [options]
 
-Commands:
-  install [--prod|--dev|--arm64|--pi]
-                    Install the package
-                      --dev    Development mode (default)
-                      --prod   Production mode
-                      --arm64  ARM64 VM optimized
-                      --pi     Raspberry Pi optimized
-  
-  start [--debug|--api-only|--no-api]
-                    Start the security system
-                      --debug    Enable debug output
-                      --api-only Start only the API server
-                      --no-api   Start without API server
-  
-  stop              Stop the security system service
-  
-  restart           Restart the security system service
-  
-  status            Check service status
-  
-  api [--port PORT] Start the Face Management API
-                      --port   API port (default: 8000)
-  
-  test [--coverage] Run tests
-                      --coverage  Include coverage report
-  
-  detect [--image PATH] [--camera]
-                    Test face detection
-                      --image   Detect faces in image
-                      --camera  Live camera detection
-  
-  recognize [--image PATH] [--enroll NAME]
-                    Test face recognition
-                      --image   Recognize face in image
-                      --enroll  Enroll new face
+All commands run inside Docker containers by default.
+Use --local flag to run with local Python virtual environment.
 
-  classify [--audio PATH] [--live]
-                    Test sound classification
-                      --audio   Classify audio file
-                      --live    Live microphone classification
+COMMANDS:
+  build             Build the Docker image
+  start             Start the security system
+  stop              Stop all containers
+  restart           Restart the system
+  status            Check service status
+
+  api [--port PORT] Start the Face Management API
   
-  camera [--duration SEC]
-                    Test camera
-                      --duration  Test duration in seconds
-  
+  detect [--camera] [--image PATH]
+                    Test face detection
+  recognize         Test face recognition
+  classify          Test sound classification
+  camera            Test camera interface
   demo              Run interactive demo
 
+  test [--coverage] Run tests
   train [--face|--sound|--all]
                     Train models
-                      --face   Train face recognition
-                      --sound  Train sound classification
-                      --all    Train all models
 
+  shell             Open shell in container
   logs [--follow]   View logs
-                      --follow  Follow log output (like tail -f)
+
+  install [--dev|--prod|--pi]
+                    Install locally (for --local mode)
 
   help              Show this help message
 
-Examples:
-  ./run.sh install                    # Dev install
-  ./run.sh install --pi               # Install on Raspberry Pi
-  ./run.sh start                      # Start system
-  ./run.sh start --debug              # Start with debug
-  ./run.sh api --port 8080            # Start API on port 8080
-  ./run.sh detect --camera            # Live face detection
-  ./run.sh test --coverage            # Run tests with coverage
-  ./run.sh logs --follow              # Follow live logs
+OPTIONS:
+  --local           Run with local venv instead of Docker
+  --rebuild         Force rebuild Docker image before running
+
+EXAMPLES:
+  ./run.sh build                  # Build Docker image
+  ./run.sh start                  # Start in container (default)
+  ./run.sh api                    # API server in container
+  ./run.sh detect --camera        # Camera detection in container
+  ./run.sh shell                  # Debug shell in container
+  ./run.sh test                   # Run tests in container
+
+  ./run.sh start --local          # Start with local venv
+  ./run.sh api --local --port 8080   # Local API on port 8080
 
 EOF
 }
 
-# Install command
-cmd_install() {
-    local mode="dev"
+# Build command
+cmd_build() {
+    check_docker
+    print_header "Building Docker Image"
     
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --prod) mode="prod"; shift ;;
-            --dev) mode="dev"; shift ;;
-            --arm64) mode="arm64"; shift ;;
-            --pi) mode="pi"; shift ;;
-            *) shift ;;
-        esac
-    done
+    local dockerfile="Dockerfile"
+    if is_raspberry_pi; then
+        dockerfile="Dockerfile.pi"
+        print_info "Detected Raspberry Pi - using $dockerfile"
+    fi
     
-    print_header "Installing IoT Home Security ($mode mode)"
-    
-    case "$mode" in
-        arm64)
-            print_info "Running ARM64 deployment script..."
-            chmod +x scripts/deploy_arm64.sh
-            ./scripts/deploy_arm64.sh
-            ;;
-        pi)
-            print_info "Running Raspberry Pi installation script..."
-            chmod +x raspberry_pi/scripts/install.sh
-            ./raspberry_pi/scripts/install.sh
-            ;;
-        prod)
-            ensure_venv
-            print_info "Installing in production mode..."
-            pip install --upgrade pip wheel
-            if is_raspberry_pi; then
-                pip install -r requirements-arm64.txt
-            else
-                pip install -r requirements.txt
-            fi
-            pip install .
-            print_success "Installation complete"
-            ;;
-        dev|*)
-            ensure_venv
-            print_info "Installing in development mode..."
-            pip install --upgrade pip wheel
-            pip install -r requirements.txt
-            pip install -e ".[dev]"
-            print_success "Development installation complete"
-            ;;
-    esac
+    docker build -f "$dockerfile" -t "$DOCKER_IMAGE" .
+    print_success "Image built: $DOCKER_IMAGE"
 }
 
 # Start command
 cmd_start() {
     local debug=""
     local api_only=""
-    local no_api=""
     
+    # Parse remaining args
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --debug) debug="--debug"; shift ;;
             --api-only) api_only="1"; shift ;;
-            --no-api) no_api="1"; shift ;;
             *) shift ;;
         esac
     done
     
-    ensure_venv
-    
-    local config=$(get_config)
-    
-    if [[ -n "$api_only" ]]; then
-        cmd_api
-        return
-    fi
-    
-    print_header "Starting IoT Home Security System"
-    print_info "Config: $config"
-    
-    export PYTHONPATH="${SCRIPT_DIR}/src:${PYTHONPATH}"
-    
-    if is_raspberry_pi; then
-        python3 raspberry_pi/main.py --config "$config" $debug
+    if [[ -n "$USE_LOCAL" ]]; then
+        # Local mode
+        ensure_venv
+        local config=$(get_config)
+        print_header "Starting IoT Home Security System (Local)"
+        print_info "Config: $config"
+        
+        if is_raspberry_pi; then
+            python3 raspberry_pi/main.py --config "$config" $debug
+        else
+            python3 -m src.cli start --config "$config" $debug
+        fi
     else
-        # Development mode - run main entry point
-        python3 -m src.cli start --config "$config" $debug
+        # Docker mode (default)
+        check_docker
+        ensure_image
+        print_header "Starting IoT Home Security System (Container)"
+        print_info "Starting with docker compose..."
+        $DOCKER_COMPOSE up -d
+        print_success "System started"
+        print_info "API: http://localhost:8000"
+        print_info "Docs: http://localhost:8000/docs"
+        print_info "Logs: ./run.sh logs --follow"
     fi
 }
 
@@ -254,43 +317,49 @@ cmd_start() {
 cmd_stop() {
     print_header "Stopping IoT Home Security"
     
-    if systemctl is-active --quiet security-system 2>/dev/null; then
-        sudo systemctl stop security-system
-        print_success "Service stopped"
+    if [[ -n "$USE_LOCAL" ]]; then
+        # Stop local process
+        if systemctl is-active --quiet security-system 2>/dev/null; then
+            sudo systemctl stop security-system
+            print_success "Service stopped"
+        else
+            pkill -f "src.cli" 2>/dev/null && print_success "Process stopped" || print_warning "No running process found"
+        fi
     else
-        # Try to kill by process name
-        pkill -f "src.cli" 2>/dev/null && print_success "Process stopped" || print_warning "No running process found"
+        # Stop containers
+        check_docker
+        $DOCKER_COMPOSE down
+        print_success "Containers stopped"
     fi
 }
 
 # Restart command
 cmd_restart() {
-    print_header "Restarting IoT Home Security"
-    
-    if systemctl is-active --quiet security-system 2>/dev/null; then
-        sudo systemctl restart security-system
-        print_success "Service restarted"
-    else
-        cmd_stop
-        sleep 1
-        cmd_start
-    fi
+    cmd_stop
+    sleep 1
+    cmd_start "$@"
 }
 
 # Status command
 cmd_status() {
     print_header "IoT Home Security Status"
     
-    if systemctl is-active --quiet security-system 2>/dev/null; then
-        print_success "Service is running"
-        sudo systemctl status security-system --no-pager
-    else
-        if pgrep -f "src.cli" > /dev/null; then
+    if [[ -n "$USE_LOCAL" ]]; then
+        if systemctl is-active --quiet security-system 2>/dev/null; then
+            print_success "Service is running"
+            sudo systemctl status security-system --no-pager
+        elif pgrep -f "src.cli" > /dev/null; then
             print_success "Running as process"
             pgrep -af "src.cli"
         else
             print_warning "Not running"
         fi
+    else
+        check_docker
+        echo "Container Status:"
+        docker ps --filter "ancestor=$DOCKER_IMAGE" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+        echo ""
+        $DOCKER_COMPOSE ps 2>/dev/null || true
     fi
 }
 
@@ -298,6 +367,7 @@ cmd_status() {
 cmd_api() {
     local port=8000
     
+    # Parse remaining args
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --port) port="$2"; shift 2 ;;
@@ -305,15 +375,14 @@ cmd_api() {
         esac
     done
     
-    ensure_venv
-    
-    print_header "Starting Face Management API"
-    print_info "API will be available at http://0.0.0.0:$port"
-    print_info "Documentation at http://0.0.0.0:$port/docs"
-    
-    export PYTHONPATH="${SCRIPT_DIR}/src:${PYTHONPATH}"
-    
-    python3 << EOF
+    if [[ -n "$USE_LOCAL" ]]; then
+        # Local mode
+        ensure_venv
+        print_header "Starting Face Management API (Local)"
+        print_info "API: http://0.0.0.0:$port"
+        print_info "Docs: http://0.0.0.0:$port/docs"
+        
+        python3 << EOF
 import uvicorn
 from src.face_service import FaceRecognizerService
 from src.api import create_app
@@ -331,12 +400,23 @@ app = create_app(service=service)
 # Run server
 uvicorn.run(app, host="0.0.0.0", port=$port)
 EOF
+    else
+        # Docker mode (default)
+        check_docker
+        ensure_image
+        print_header "Starting Face Management API (Container)"
+        print_info "API: http://localhost:$port"
+        print_info "Docs: http://localhost:$port/docs"
+        
+        docker_run_with_port "$port" python -m src.cli start
+    fi
 }
 
 # Test command
 cmd_test() {
     local coverage=""
     
+    # Parse remaining args
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --coverage) coverage="--cov=src --cov-report=term-missing"; shift ;;
@@ -344,12 +424,16 @@ cmd_test() {
         esac
     done
     
-    ensure_venv
-    
-    print_header "Running Tests"
-    
-    export PYTHONPATH="${SCRIPT_DIR}/src:${PYTHONPATH}"
-    pytest tests/ $coverage -v
+    if [[ -n "$USE_LOCAL" ]]; then
+        ensure_venv
+        print_header "Running Tests (Local)"
+        pytest tests/ $coverage -v
+    else
+        check_docker
+        ensure_image
+        print_header "Running Tests (Container)"
+        docker_run pytest tests/ $coverage -v
+    fi
 }
 
 # Face detection test
@@ -357,6 +441,7 @@ cmd_detect() {
     local image=""
     local camera=""
     
+    # Parse remaining args
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --image) image="$2"; shift 2 ;;
@@ -365,24 +450,23 @@ cmd_detect() {
         esac
     done
     
-    ensure_venv
-    export PYTHONPATH="${SCRIPT_DIR}/src:${PYTHONPATH}"
-    
-    print_header "Face Detection Test"
-    
-    if [[ -n "$camera" ]]; then
-        print_info "Starting camera face detection (press 'q' to quit)..."
-        python3 scripts/test_face_detection.py --camera
-    elif [[ -n "$image" ]]; then
-        print_info "Detecting faces in: $image"
-        python3 scripts/test_face_detection.py --image "$image"
-    else
-        print_info "Running basic face detection test..."
-        python3 -c "
+    if [[ -n "$USE_LOCAL" ]]; then
+        ensure_venv
+        print_header "Face Detection Test (Local)"
+        
+        if [[ -n "$camera" ]]; then
+            print_info "Starting camera face detection (press 'q' to quit)..."
+            python3 scripts/camera_demo.py
+        elif [[ -n "$image" ]]; then
+            print_info "Detecting faces in: $image"
+            python3 scripts/camera_demo.py --image "$image"
+        else
+            print_info "Running basic face detection test..."
+            python3 -c "
 from src.face import FaceDetector
 import numpy as np
 
-detector = FaceDetector(backend='haar_cascade')
+detector = FaceDetector(backend='opencv_dnn')
 print('✓ Face detector initialized')
 
 # Test with blank image
@@ -391,57 +475,64 @@ faces = detector.detect(img)
 print(f'✓ Detection test passed (found {len(faces)} faces in test image)')
 print('✓ Face detection is working!')
 "
+        fi
+    else
+        check_docker
+        ensure_image
+        print_header "Face Detection Test (Container)"
+        
+        if [[ -n "$camera" ]]; then
+            print_info "Starting camera face detection (press 'q' to quit)..."
+            docker_run python scripts/camera_demo.py
+        elif [[ -n "$image" ]]; then
+            print_info "Detecting faces in: $image"
+            docker_run python scripts/camera_demo.py --image "$image"
+        else
+            print_info "Running basic face detection test..."
+            docker_run python -c "
+from src.face import FaceDetector
+import numpy as np
+
+detector = FaceDetector(backend='opencv_dnn')
+print('✓ Face detector initialized')
+
+# Test with blank image
+img = np.zeros((480, 640, 3), dtype=np.uint8)
+faces = detector.detect(img)
+print(f'✓ Detection test passed (found {len(faces)} faces in test image)')
+print('✓ Face detection is working!')
+"
+        fi
     fi
 }
 
 # Face recognition test
 cmd_recognize() {
-    local image=""
-    local enroll=""
-    
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --image) image="$2"; shift 2 ;;
-            --enroll) enroll="$2"; shift 2 ;;
-            *) shift ;;
-        esac
-    done
-    
-    ensure_venv
-    export PYTHONPATH="${SCRIPT_DIR}/src:${PYTHONPATH}"
-    
-    print_header "Face Recognition Test"
-    
-    python3 -c "
+    local test_code="
 from src.face import FaceRecognizer
 
-recognizer = FaceRecognizer(model='dlib', threshold=0.6)
+recognizer = FaceRecognizer(model='opencv_dnn', threshold=0.6)
 print('✓ Face recognizer initialized')
 print(f'  Embedding size: {recognizer.embedding_size}')
 print(f'  Enrolled faces: {recognizer.get_enrolled_count()}')
 print('✓ Face recognition is working!')
 "
+    
+    if [[ -n "$USE_LOCAL" ]]; then
+        ensure_venv
+        print_header "Face Recognition Test (Local)"
+        python3 -c "$test_code"
+    else
+        check_docker
+        ensure_image
+        print_header "Face Recognition Test (Container)"
+        docker_run python -c "$test_code"
+    fi
 }
 
-# Sound classification test  
+# Sound classification test
 cmd_classify() {
-    local audio=""
-    local live=""
-    
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --audio) audio="$2"; shift 2 ;;
-            --live) live="1"; shift ;;
-            *) shift ;;
-        esac
-    done
-    
-    ensure_venv
-    export PYTHONPATH="${SCRIPT_DIR}/src:${PYTHONPATH}"
-    
-    print_header "Sound Classification Test"
-    
-    python3 -c "
+    local test_code="
 from src.audio import SoundClassifier
 import numpy as np
 
@@ -455,12 +546,24 @@ result = classifier.classify(audio)
 print(f'✓ Classification test: {result.label} ({result.confidence:.2%})')
 print('✓ Sound classification is working!')
 "
+    
+    if [[ -n "$USE_LOCAL" ]]; then
+        ensure_venv
+        print_header "Sound Classification Test (Local)"
+        python3 -c "$test_code"
+    else
+        check_docker
+        ensure_image
+        print_header "Sound Classification Test (Container)"
+        docker_run python -c "$test_code"
+    fi
 }
 
 # Camera test
 cmd_camera() {
     local duration=5
     
+    # Parse remaining args
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --duration) duration="$2"; shift 2 ;;
@@ -468,12 +571,7 @@ cmd_camera() {
         esac
     done
     
-    ensure_venv
-    export PYTHONPATH="${SCRIPT_DIR}/src:${PYTHONPATH}"
-    
-    print_header "Camera Test"
-    
-    python3 -c "
+    local test_code="
 from src.sensors import CameraInterface
 import time
 
@@ -503,25 +601,38 @@ fps = frames / $duration
 print(f'✓ Captured {frames} frames in $duration seconds ({fps:.1f} FPS)')
 print('✓ Camera is working!')
 "
+    
+    if [[ -n "$USE_LOCAL" ]]; then
+        ensure_venv
+        print_header "Camera Test (Local)"
+        python3 -c "$test_code"
+    else
+        check_docker
+        ensure_image
+        print_header "Camera Test (Container)"
+        docker_run python -c "$test_code"
+    fi
 }
 
 # Demo command
 cmd_demo() {
-    ensure_venv
-    export PYTHONPATH="${SCRIPT_DIR}/src:${PYTHONPATH}"
-    
     print_header "IoT Home Security Demo"
     
     echo -e "${CYAN}This demo will test all major components:${NC}"
     echo "  1. Face Detection"
     echo "  2. Face Recognition"
     echo "  3. Sound Classification"
-    echo "  4. Camera Interface"
     echo ""
     
-    read -p "Press Enter to continue..."
-    
+    if [[ -t 0 ]]; then
+        read -p "Press Enter to continue..."
+    fi
     echo ""
+    
+    # Run tests based on mode
+    local args=""
+    [[ -n "$USE_LOCAL" ]] && args="--local"
+    
     cmd_detect
     echo ""
     cmd_recognize
@@ -532,10 +643,11 @@ cmd_demo() {
     print_success "Demo complete!"
 }
 
-# Train command - run training notebooks or scripts
+# Train command
 cmd_train() {
     local model=""
     
+    # Parse remaining args
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --face) model="face"; shift ;;
@@ -545,19 +657,9 @@ cmd_train() {
         esac
     done
     
-    ensure_venv
-    export PYTHONPATH="${SCRIPT_DIR}/src:${PYTHONPATH}"
-    
     print_header "Model Training"
     
-    case "$model" in
-        face)
-            print_info "Starting face recognition training..."
-            if [[ -f "notebooks/02_face_recognition_training.ipynb" ]]; then
-                jupyter nbconvert --to notebook --execute notebooks/02_face_recognition_training.ipynb --inplace
-            else
-                print_warning "Training notebook not found. Using placeholder training."
-                python3 -c "
+    local train_face_code="
 from src.face_service import FaceRecognizerService
 from pathlib import Path
 
@@ -578,15 +680,21 @@ if watch_list_dir.exists():
 else:
     print('No watch list directory found. Add faces to data/raw/faces/watch_list/')
 "
+    
+    case "$model" in
+        face)
+            print_info "Starting face recognition training..."
+            if [[ -n "$USE_LOCAL" ]]; then
+                ensure_venv
+                python3 -c "$train_face_code"
+            else
+                check_docker
+                ensure_image
+                docker_run python -c "$train_face_code"
             fi
             ;;
         sound)
-            print_info "Starting sound classification training..."
-            if [[ -f "notebooks/03_sound_classification_training.ipynb" ]]; then
-                jupyter nbconvert --to notebook --execute notebooks/03_sound_classification_training.ipynb --inplace
-            else
-                print_warning "Training notebook not found"
-            fi
+            print_info "Sound training not yet implemented in container mode"
             ;;
         all)
             cmd_train --face
@@ -603,10 +711,20 @@ else:
     esac
 }
 
+# Shell command (Docker only)
+cmd_shell() {
+    check_docker
+    ensure_image
+    print_header "Container Shell"
+    print_info "Opening interactive shell in container..."
+    docker_run /bin/bash
+}
+
 # Logs command
 cmd_logs() {
     local follow=""
     
+    # Parse remaining args
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --follow|-f) follow="-f"; shift ;;
@@ -616,26 +734,120 @@ cmd_logs() {
     
     print_header "Viewing Logs"
     
-    if systemctl is-active --quiet security-system 2>/dev/null; then
-        journalctl -u security-system $follow
-    elif [[ -f "logs/security.log" ]]; then
-        if [[ -n "$follow" ]]; then
-            tail -f logs/security.log
+    if [[ -n "$USE_LOCAL" ]]; then
+        if systemctl is-active --quiet security-system 2>/dev/null; then
+            journalctl -u security-system $follow
+        elif [[ -f "logs/security.log" ]]; then
+            if [[ -n "$follow" ]]; then
+                tail -f logs/security.log
+            else
+                cat logs/security.log
+            fi
         else
-            cat logs/security.log
+            print_warning "No logs found"
         fi
     else
-        print_warning "No logs found"
+        check_docker
+        $DOCKER_COMPOSE logs $follow
     fi
 }
 
-# Main entry point
+# Install command (for local mode)
+cmd_install() {
+    local mode="dev"
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --prod) mode="prod"; shift ;;
+            --dev) mode="dev"; shift ;;
+            --pi) mode="pi"; shift ;;
+            *) shift ;;
+        esac
+    done
+    
+    print_header "Installing IoT Home Security ($mode mode)"
+    print_info "This installs to local virtual environment"
+    
+    case "$mode" in
+        pi)
+            print_info "Running Raspberry Pi installation..."
+            if [[ -f "raspberry_pi/scripts/install.sh" ]]; then
+                chmod +x raspberry_pi/scripts/install.sh
+                ./raspberry_pi/scripts/install.sh
+            else
+                ensure_venv
+                pip install -r requirements-pi.txt
+                pip install -e .
+            fi
+            ;;
+        prod)
+            ensure_venv
+            print_info "Installing in production mode..."
+            pip install --upgrade pip wheel
+            if is_raspberry_pi; then
+                pip install -r requirements-pi.txt
+            else
+                pip install -r requirements.txt
+            fi
+            pip install .
+            print_success "Installation complete"
+            ;;
+        dev|*)
+            ensure_venv
+            print_info "Installing in development mode..."
+            pip install --upgrade pip wheel
+            pip install -r requirements.txt
+            pip install -e ".[dev]"
+            print_success "Development installation complete"
+            ;;
+    esac
+}
+
+# ============================================================
+# MAIN ENTRY POINT
+# ============================================================
+
+parse_global_flags() {
+    local new_args=()
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --local)
+                USE_LOCAL="1"
+                shift
+                ;;
+            --rebuild)
+                FORCE_REBUILD="1"
+                shift
+                ;;
+            *)
+                new_args+=("$1")
+                shift
+                ;;
+        esac
+    done
+    
+    # Return cleaned args
+    echo "${new_args[@]}"
+}
+
 main() {
+    # Parse global flags first
+    local args
+    args=$(parse_global_flags "$@")
+    set -- $args
+    
     local command="${1:-help}"
     shift || true
     
+    # Auto-detect: if on Raspberry Pi without Docker, use local mode
+    if is_raspberry_pi && ! command -v docker &> /dev/null; then
+        print_info "Raspberry Pi detected without Docker - using local mode"
+        USE_LOCAL="1"
+    fi
+    
     case "$command" in
-        install)    cmd_install "$@" ;;
+        build)      cmd_build "$@" ;;
         start)      cmd_start "$@" ;;
         stop)       cmd_stop "$@" ;;
         restart)    cmd_restart "$@" ;;
@@ -648,7 +860,9 @@ main() {
         camera)     cmd_camera "$@" ;;
         demo)       cmd_demo "$@" ;;
         train)      cmd_train "$@" ;;
+        shell)      cmd_shell "$@" ;;
         logs)       cmd_logs "$@" ;;
+        install)    cmd_install "$@" ;;
         help|--help|-h) show_help ;;
         *)
             print_error "Unknown command: $command"

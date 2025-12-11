@@ -32,7 +32,7 @@ database:
 # Face Detection Settings
 face_detection:
   enabled: true
-  model: "haar_cascade"  # Options: haar_cascade, mtcnn, retinaface, mediapipe
+  model: "opencv_dnn"  # Options: haar_cascade, mediapipe, opencv_dnn, dlib, dlib_cnn
   confidence_threshold: 0.8
   min_face_size: [30, 30]
   scale_factor: 1.1
@@ -41,9 +41,9 @@ face_detection:
 # Face Recognition Settings
 face_recognition:
   enabled: true
-  # Embedding backend: dlib (128D, slower, accurate) or tflite (512D, faster on RPi)
-  model: "dlib"  # Options: dlib, tflite
-  embedding_size: 128  # 128 for dlib, 512 for tflite
+  # Embedding backend: opencv_dnn (128D, default), dlib (128D, requires dlib), tflite (512D)
+  model: "opencv_dnn"  # Options: opencv_dnn, dlib, tflite, mobilenetv2
+  embedding_size: 128  # 128 for opencv_dnn/dlib, 512 for tflite
   similarity_threshold: 0.6
   watch_list_dir: "data/raw/faces/watch_list"
   # Upload directory for API-uploaded faces
