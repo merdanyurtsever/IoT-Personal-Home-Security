@@ -111,13 +111,13 @@ setup_python_env() {
     
     cd "$project_dir"
     
-    # Create virtual environment
-    if [[ ! -d "venv" ]]; then
+    # Create virtual environment (use .venv for consistency with run.sh)
+    if [[ ! -d ".venv" ]]; then
         print_info "Creating virtual environment..."
-        python3 -m venv venv
+        python3 -m venv .venv
     fi
     
-    source venv/bin/activate
+    source .venv/bin/activate
     
     # Upgrade pip
     pip install --upgrade pip wheel setuptools
@@ -278,30 +278,3 @@ main() {
 }
 
 main "$@"
-#!/usr/bin/env bash
-set -euo pipefail
-
-# Project-local virtual environment bootstrapper (similar to node_modules)
-# - Creates .venv under repo root (ignored by git)
-# - Installs project requirements and editable package
-# Usage: ./scripts/setup_env.sh
-
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VENV_PATH="$REPO_ROOT/.venv"
-ARCH="$(uname -m)"
-
-# Prefer ARM64-friendly requirements when available
-if [[ "$ARCH" == "aarch64" && -f "$REPO_ROOT/requirements-arm64.txt" ]]; then
-	REQ_FILE="$REPO_ROOT/requirements-arm64.txt"
-else
-	REQ_FILE="$REPO_ROOT/requirements.txt"
-fi
-
-python3 -m venv "$VENV_PATH"
-source "$VENV_PATH/bin/activate"
-
-python -m pip install --upgrade pip
-python -m pip install -r "$REQ_FILE"
-python -m pip install -e "$REPO_ROOT"
-
-echo "Virtual environment ready at $VENV_PATH"

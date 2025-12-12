@@ -140,3 +140,78 @@ raspberry_pi:
   gpio_enabled: true
   optimize_for_edge: true
   use_tflite: true
+
+# ============================================================
+# Processing Constants (extracted from source code)
+# ============================================================
+
+# Face Processing Constants
+face_processing:
+  # Margin around detected face as fraction of size (0.2 = 20%)
+  crop_margin_ratio: 0.2
+  # Output size for face alignment [width, height]
+  alignment_output_size: [112, 112]
+  # Target size for preprocessing before embedding [width, height]
+  preprocess_target_size: [160, 160]
+  # Normalization values for face preprocessing
+  normalization_mean: 0.5
+  normalization_std: 0.5
+  # Face quality score calculation
+  quality:
+    # Divisor for Laplacian variance to compute sharpness (higher = less sensitive)
+    sharpness_divisor: 500.0
+    # Target brightness (0.5 = middle gray)
+    brightness_target: 0.5
+    # Scale factor for brightness deviation penalty
+    brightness_scale: 2.0
+
+# DNN Detection Constants
+dnn_detection:
+  # Input size for SSD face detector [width, height]
+  input_size: [300, 300]
+  # Mean values for blob normalization (BGR order)
+  mean_values: [104.0, 177.0, 123.0]
+  # Default confidence threshold for detections
+  confidence_threshold: 0.7
+  # Non-maximum suppression threshold
+  nms_threshold: 0.15
+  # Minimum face size in pixels [width, height]
+  min_face_size: [30, 30]
+  # Aspect ratio constraints for valid face boxes
+  min_aspect_ratio: 0.5
+  max_aspect_ratio: 2.0
+  # Maximum face size as fraction of image (0.8 = 80%)
+  max_size_ratio: 0.8
+  # Overlap threshold for removing duplicate detections
+  overlap_threshold: 0.6
+
+# OpenFace Embedding Constants
+openface:
+  # Input size for OpenFace network [width, height]
+  input_size: [96, 96]
+  # Ratio of similarity_threshold for partial match (threat profile)
+  threat_profile_threshold_ratio: 0.7
+
+# Audio Processing Constants
+audio_processing:
+  # Default sample rate for audio processing
+  sample_rate: 22050
+  # Default audio clip duration in seconds
+  duration: 5.0
+  # Threshold for silence detection
+  silence_threshold: 0.01
+  # Top dB for trimming silence (librosa)
+  trim_top_db: 20
+  # Feature extraction defaults
+  features:
+    n_mfcc: 40
+    n_mels: 128
+    n_fft: 2048
+    hop_length: 512
+    power: 2.0
+    log_epsilon: 1.0e-10
+  # Dummy classifier thresholds (when no model loaded)
+  dummy_classifier:
+    loud_threshold: 0.5
+    ambient_threshold: 0.1
+    default_confidence: 0.5

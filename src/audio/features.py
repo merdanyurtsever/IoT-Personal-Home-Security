@@ -6,19 +6,35 @@ from typing import Optional
 
 import numpy as np
 
+from ..constants import get_audio_processing_config
+
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class FeatureConfig:
     """Feature extraction configuration."""
-    n_mfcc: int = 40
-    n_mels: int = 128
-    n_fft: int = 2048
-    hop_length: int = 512
+    n_mfcc: int = None
+    n_mels: int = None
+    n_fft: int = None
+    hop_length: int = None
     fmin: float = 0.0
     fmax: Optional[float] = None
-    power: float = 2.0
+    power: float = None
+    
+    def __post_init__(self):
+        """Set defaults from global config if not specified."""
+        audio_config = get_audio_processing_config()
+        if self.n_mfcc is None:
+            self.n_mfcc = audio_config.n_mfcc
+        if self.n_mels is None:
+            self.n_mels = audio_config.n_mels
+        if self.n_fft is None:
+            self.n_fft = audio_config.n_fft
+        if self.hop_length is None:
+            self.hop_length = audio_config.hop_length
+        if self.power is None:
+            self.power = audio_config.power
 
 
 class FeatureExtractor:
@@ -110,7 +126,7 @@ class FeatureExtractor:
                 filterbank[i, j] = (bin_points[i + 2] - j) / (bin_points[i + 2] - bin_points[i + 1])
         
         mel_spectrum = np.dot(power_spectrum, filterbank.T)
-        log_mel = np.log(mel_spectrum + 1e-10)
+        log_mel = np.log(mel_spectrum + get_audio_processing_config().log_epsilon)
         
         mfcc = dct(log_mel, type=2, axis=1, norm="ortho")[:, :n_mfcc]
         

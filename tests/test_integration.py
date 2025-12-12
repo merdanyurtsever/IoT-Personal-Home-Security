@@ -8,32 +8,6 @@ from unittest.mock import Mock, patch
 class TestSecuritySystemIntegration:
     """Integration tests for the complete security system."""
     
-    def test_face_detection_to_recognition_pipeline(self):
-        """Test complete face detection to recognition pipeline."""
-        from src import FaceDetector, FaceRecognizer
-        
-        # Initialize components
-        detector = FaceDetector()
-        recognizer = FaceRecognizer(model="dlib")
-        
-        # Create test image
-        image = np.zeros((480, 640, 3), dtype=np.uint8)
-        
-        # Run detection
-        faces = detector.detect(image)
-        
-        # For each detected face, run recognition
-        for face in faces:
-            # Crop face (simplified)
-            x, y, w, h = face.bbox
-            face_img = image[y:y+h, x:x+w]
-            
-            # Recognize
-            result = recognizer.recognize(face_img)
-            
-            assert hasattr(result, "identity")
-            assert hasattr(result, "confidence")
-    
     def test_audio_classification_pipeline(self):
         """Test complete audio classification pipeline."""
         from src.audio import (

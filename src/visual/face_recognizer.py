@@ -7,6 +7,8 @@ from enum import Enum
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 
+from ..constants import get_openface_config
+
 
 class FaceCategory(Enum):
     """Category of recognized face."""
@@ -94,11 +96,15 @@ class FaceRecognizer:
             return None
         
         try:
-            # Preprocess: resize to 96x96 and normalize
+            # Get input size from config
+            openface_config = get_openface_config()
+            input_size = openface_config.input_size
+            
+            # Preprocess: resize to configured size and normalize
             face_blob = cv2.dnn.blobFromImage(
                 face_img,
                 1.0 / 255,
-                (96, 96),
+                input_size,
                 (0, 0, 0),
                 swapRB=True,
                 crop=False
@@ -224,7 +230,7 @@ class FaceRecognizer:
                 confidence=best_similarity,
                 category=FaceCategory.WATCH_LIST
             )
-        elif best_similarity >= self.similarity_threshold * 0.7:
+        elif best_similarity >= self.similarity_threshold * get_openface_config().threat_profile_threshold_ratio:
             # Partial match - could be threat profile
             return RecognitionResult(
                 identity=best_match,

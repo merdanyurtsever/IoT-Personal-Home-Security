@@ -7,18 +7,30 @@ from typing import Optional, Tuple, Union
 
 import numpy as np
 
+from ..constants import get_audio_processing_config
+
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class AudioConfig:
     """Audio processing configuration."""
-    sample_rate: int = 22050
-    duration: float = 5.0
+    sample_rate: int = None
+    duration: float = None
     mono: bool = True
     normalize: bool = True
     trim_silence: bool = False
-    silence_threshold: float = 0.01
+    silence_threshold: float = None
+    
+    def __post_init__(self):
+        """Set defaults from global config if not specified."""
+        audio_config = get_audio_processing_config()
+        if self.sample_rate is None:
+            self.sample_rate = audio_config.sample_rate
+        if self.duration is None:
+            self.duration = audio_config.duration
+        if self.silence_threshold is None:
+            self.silence_threshold = audio_config.silence_threshold
 
 
 class AudioPreprocessor:
@@ -105,11 +117,12 @@ class AudioPreprocessor:
         from scipy.io import wavfile
         
         original_sr, audio = wavfile.read(str(audio_path))
+        audio_config = get_audio_processing_config()
         
         if audio.dtype == np.int16:
-            audio = audio.astype(np.float32) / 32768.0
+            audio = audio.astype(np.float32) / audio_config.int16_max
         elif audio.dtype == np.int32:
-            audio = audio.astype(np.float32) / 2147483648.0
+            audio = audio.astype(np.float32) / audio_config.int32_max
         
         if len(audio.shape) > 1 and self.config.mono:
             audio = np.mean(audio, axis=1)
@@ -185,7 +198,7 @@ class AudioPreprocessor:
         
         if self._librosa_available:
             import librosa
-            trimmed, _ = librosa.effects.trim(audio, top_db=20)
+            trimmed, _ = librosa.effects.trim(audio, top_db=get_audio_processing_config().trim_top_db)
             return trimmed
         else:
             non_silent = np.abs(audio) > threshold

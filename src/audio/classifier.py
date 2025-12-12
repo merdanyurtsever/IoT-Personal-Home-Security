@@ -9,6 +9,7 @@ import numpy as np
 
 from .preprocessing import AudioPreprocessor, AudioConfig
 from .features import FeatureExtractor, FeatureConfig
+from ..constants import get_audio_processing_config
 
 logger = logging.getLogger(__name__)
 
@@ -239,19 +240,20 @@ class SoundClassifier:
     
     def _dummy_classify(self, features: np.ndarray) -> ClassificationResult:
         """Dummy classification when no model is loaded."""
+        audio_config = get_audio_processing_config()
         energy = np.mean(np.abs(features))
         
-        if energy > 0.5:
+        if energy > audio_config.dummy_loud_threshold:
             label = "loud_sound"
-        elif energy > 0.1:
+        elif energy > audio_config.dummy_ambient_threshold:
             label = "ambient"
         else:
             label = "silence"
         
         return ClassificationResult(
             label=label,
-            confidence=0.5,
-            all_probabilities={label: 0.5},
+            confidence=audio_config.dummy_default_confidence,
+            all_probabilities={label: audio_config.dummy_default_confidence},
         )
     
     def classify_file(self, audio_path: Union[str, Path]) -> ClassificationResult:

@@ -9,6 +9,7 @@ import numpy as np
 
 from .base import BaseFaceDetector
 from .types import DetectedFace
+from ...constants import get_dnn_detection_config
 
 logger = logging.getLogger(__name__)
 
@@ -26,16 +27,26 @@ class OpenCVDNNDetector(BaseFaceDetector):
     
     def __init__(
         self,
-        confidence_threshold: float = 0.7,
+        confidence_threshold: Optional[float] = None,
         model_path: Optional[Union[str, Path]] = None,
         config_path: Optional[Union[str, Path]] = None,
-        input_size: Tuple[int, int] = (300, 300),
-        nms_threshold: float = 0.15,
+        input_size: Optional[Tuple[int, int]] = None,
+        nms_threshold: Optional[float] = None,
     ):
-        """Initialize OpenCV DNN face detector."""
-        self.confidence_threshold = confidence_threshold
-        self.input_size = input_size
-        self.nms_threshold = nms_threshold
+        """Initialize OpenCV DNN face detector.
+        
+        Args:
+            confidence_threshold: Minimum confidence for detections (uses config default if None)
+            model_path: Path to model file
+            config_path: Path to config file
+            input_size: Input size for the network (uses config default if None)
+            nms_threshold: Non-maximum suppression threshold (uses config default if None)
+        """
+        dnn_config = get_dnn_detection_config()
+        self.confidence_threshold = confidence_threshold if confidence_threshold is not None else dnn_config.confidence_threshold
+        self.input_size = input_size if input_size is not None else dnn_config.input_size
+        self.nms_threshold = nms_threshold if nms_threshold is not None else dnn_config.nms_threshold
+        self._dnn_config = dnn_config
         
         self.net = self._load_model(model_path, config_path)
         logger.info("Initialized OpenCV DNN face detector")
@@ -89,7 +100,7 @@ class OpenCVDNNDetector(BaseFaceDetector):
         
         blob = cv2.dnn.blobFromImage(
             image, 1.0, self.input_size,
-            (104.0, 177.0, 123.0),
+            self._dnn_config.mean_values,
             swapRB=False, crop=False
         )
         
@@ -98,6 +109,8 @@ class OpenCVDNNDetector(BaseFaceDetector):
         
         boxes = []
         confidences = []
+        
+        min_face_w, min_face_h = self._dnn_config.min_face_size
         
         for i in range(detections.shape[2]):
             confidence = float(detections[0, 0, i, 2])
@@ -125,14 +138,14 @@ class OpenCVDNNDetector(BaseFaceDetector):
                 box_w = x2 - x1
                 box_h = y2 - y1
                 
-                if box_w < 30 or box_h < 30:
+                if box_w < min_face_w or box_h < min_face_h:
                     continue
                     
                 aspect_ratio = box_w / box_h if box_h > 0 else 0
-                if aspect_ratio < 0.5 or aspect_ratio > 2.0:
+                if aspect_ratio < self._dnn_config.min_aspect_ratio or aspect_ratio > self._dnn_config.max_aspect_ratio:
                     continue
                 
-                if box_w > w * 0.8 or box_h > h * 0.8:
+                if box_w > w * self._dnn_config.max_size_ratio or box_h > h * self._dnn_config.max_size_ratio:
                     continue
                 
                 boxes.append([x1, y1, box_w, box_h])
@@ -175,7 +188,7 @@ class OpenCVDNNDetector(BaseFaceDetector):
                 dist = ((cx1 - cx2) ** 2 + (cy1 - cy2) ** 2) ** 0.5
                 avg_size = (w1 + h1 + w2 + h2) / 4
                 
-                if dist < avg_size * 0.6:
+                if dist < avg_size * self._dnn_config.overlap_threshold:
                     is_duplicate = True
                     break
             

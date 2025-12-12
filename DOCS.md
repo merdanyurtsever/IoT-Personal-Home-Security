@@ -53,28 +53,46 @@ Technical reference for the IoT Home Security system. Read README.md first for q
 ### Code Structure
 
 ```
-src/                      # Flat, simple structure
-├── face.py               # FaceDetector, FaceRecognizer, DetectedFace, etc.
-├── face_service.py       # FaceDatabase, FaceRecognizerService, processing
-├── audio.py              # SoundClassifier, AudioPreprocessor, FeatureExtractor
-├── sensors.py            # CameraInterface, MicrophoneInterface, MotionSensor
-├── alerts.py             # LocalAlarm, NotificationManager, various notifiers
-├── api.py                # FastAPI routes + Pydantic schemas
-└── cli.py                # Command-line interface
+src/                          # Main source code
+├── __init__.py               # Package exports
+├── constants.py              # Centralized config & constants
+├── alerts.py                 # Notification & alarm management
+├── api.py                    # FastAPI REST endpoints
+├── cli.py                    # Command-line interface
+├── visual/                   # Face detection & recognition
+│   ├── face_detector.py      # Multi-backend face detection
+│   ├── face_recognizer.py    # Face embedding & matching
+│   ├── pipeline.py           # Detection → Recognition flow
+│   ├── utils.py              # Image preprocessing utilities
+│   ├── detection/            # Detection backends
+│   │   ├── base.py           # Abstract detector interface
+│   │   ├── opencv_dnn.py     # OpenCV DNN (SSD) detector
+│   │   ├── haar.py           # Haar cascade detector
+│   │   ├── mediapipe.py      # MediaPipe face detector
+│   │   └── dlib.py           # dlib HOG/CNN detector
+│   └── recognition/          # Recognition backends
+│       ├── database.py       # Face database management
+│       ├── embeddings/       # Embedding extractors
+│       └── types.py          # Data types
+├── audio/                    # Sound classification
+│   ├── classifier.py         # Multi-format model loader
+│   ├── features.py           # MFCC/Mel spectrogram extraction
+│   └── preprocessing.py      # Audio loading & normalization
+└── sensors/                  # Hardware interfaces
+    └── camera/               # Camera capture
 ```
 
 ### Key Classes
 
 | Class | File | What It Does |
 |-------|------|--------------|
-| `FaceDetector` | `face.py` | Finds faces in images |
-| `FaceRecognizer` | `face.py` | Matches faces to known people |
-| `FaceSecurityPipeline` | `face.py` | Motion → detect → recognize flow |
-| `FaceRecognizerService` | `face_service.py` | Manages face database & enrollment |
-| `SoundClassifier` | `audio.py` | Classifies audio clips |
-| `CameraInterface` | `sensors.py` | Captures video frames |
-| `MotionSensor` | `sensors.py` | Detects motion via PIR |
-| `LocalAlarm` | `alerts.py` | Controls buzzer/LED |
+| `FaceDetector` | `visual/face_detector.py` | Multi-backend face detection |
+| `FaceRecognizer` | `visual/face_recognizer.py` | Embedding extraction & matching |
+| `OpenCVDNNDetector` | `visual/detection/opencv_dnn.py` | SSD-based face detection |
+| `SoundClassifier` | `audio/classifier.py` | Classifies audio (TFLite, ONNX, sklearn) |
+| `FeatureExtractor` | `audio/features.py` | MFCC & Mel spectrogram extraction |
+| `AudioPreprocessor` | `audio/preprocessing.py` | Audio loading & normalization |
+| `Config` | `constants.py` | Centralized configuration loader |
 | `NotificationManager` | `alerts.py` | Sends push/SMS/MQTT alerts |
 
 ---
@@ -433,6 +451,253 @@ sudo systemctl restart security-system
 sudo systemctl status security-system
 journalctl -u security-system -f       # Live logs
 ```
+
+---
+
+## API Documentation
+
+### Overview
+
+The REST API runs on port 8000 by default and provides endpoints for face management, detection, and system status.
+
+### Starting the API
+
+```bash
+./run.sh api              # Start API server
+./run.sh api --reload     # Start with auto-reload (development)
+```
+
+### Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check |
+| GET | `/api/v1/faces` | List registered faces |
+| POST | `/api/v1/faces/register` | Register a new face |
+| DELETE | `/api/v1/faces/{name}` | Remove a registered face |
+| POST | `/api/v1/detect` | Detect faces in uploaded image |
+| POST | `/api/v1/recognize` | Recognize faces in uploaded image |
+| GET | `/api/v1/status` | System status |
+
+### Request Examples
+
+**Register a Face:**
+```bash
+curl -X POST http://localhost:8000/api/v1/faces/register \
+  -F "name=john_doe" \
+  -F "image=@/path/to/face.jpg"
+```
+
+**Detect Faces:**
+```bash
+curl -X POST http://localhost:8000/api/v1/detect \
+  -F "image=@/path/to/image.jpg"
+```
+
+**Response Format:**
+```json
+{
+  "success": true,
+  "faces": [
+    {
+      "bbox": [100, 50, 200, 200],
+      "confidence": 0.95,
+      "identity": "john_doe"
+    }
+  ]
+}
+```
+
+### Authentication
+
+Authentication is disabled by default. To enable:
+
+```yaml
+# config/config.yaml
+api:
+  auth:
+    enabled: true
+    method: "api_key"  # Options: none, api_key
+```
+
+---
+
+## Security Considerations
+
+### Data Privacy
+
+- **Local Processing**: All face detection and recognition runs locally on your device
+- **No Cloud Required**: The system works entirely offline after initial setup
+- **Embedding Storage**: Face embeddings (not images) are stored in the local database
+- **GDPR Compliance**: For EU deployments, ensure consent for biometric data collection
+
+### Network Security
+
+- **Local Network**: By default, the API binds to `0.0.0.0` - restrict to localhost in production
+- **CORS**: Configure `cors_origins` in config.yaml to limit allowed origins
+- **HTTPS**: Use a reverse proxy (nginx) with TLS for production deployments
+
+```yaml
+# config/config.yaml - Production settings
+api:
+  host: "127.0.0.1"  # Bind to localhost only
+  cors_origins: ["https://yourdomain.com"]
+```
+
+### Credential Management
+
+- **Firebase Config**: Store `config/firebase_config.json` securely (not in git)
+- **MQTT Credentials**: Set in config.yaml, consider environment variables for production
+- **API Keys**: Generate strong random keys if using API authentication
+
+### File Permissions
+
+```bash
+# Restrict config file access
+chmod 600 config/config.yaml
+chmod 600 config/firebase_config.json
+
+# Restrict face database
+chmod 700 data/raw/faces/watch_list
+```
+
+---
+
+## Logging & Monitoring
+
+### Log Files
+
+| File | Contents |
+|------|----------|
+| `logs/security.log` | Main application log |
+| `logs/api.log` | API request/response logs |
+| `logs/alerts.log` | Alert history |
+
+### Log Configuration
+
+Edit `config/logging.yaml` to customize log levels:
+
+```yaml
+version: 1
+handlers:
+  file:
+    class: logging.handlers.RotatingFileHandler
+    filename: logs/security.log
+    maxBytes: 10485760  # 10MB
+    backupCount: 5
+
+loggers:
+  src:
+    level: INFO
+  src.visual:
+    level: DEBUG  # More verbose for debugging
+```
+
+### Log Levels
+
+| Level | When to Use |
+|-------|-------------|
+| DEBUG | Detailed debugging (high volume) |
+| INFO | Normal operation events |
+| WARNING | Unexpected but handled situations |
+| ERROR | Errors that need attention |
+| CRITICAL | System failures |
+
+### Viewing Logs
+
+```bash
+./run.sh logs              # View recent logs
+./run.sh logs --follow     # Stream logs in real-time
+journalctl -u security-system -f  # Systemd service logs
+```
+
+### Metrics (Future)
+
+Prometheus metrics endpoint planned for future release:
+- Face detection counts and latency
+- Recognition match rates
+- Alert frequencies
+- System resource usage
+
+---
+
+## Development Guide
+
+### Code Style
+
+- **Python Version**: 3.9+
+- **Formatter**: Black with default settings
+- **Linter**: Ruff (replaces flake8/isort)
+- **Type Hints**: Required for all public functions
+
+```bash
+# Format code
+black src/ tests/
+
+# Lint
+ruff check src/ tests/
+
+# Type check
+mypy src/
+```
+
+### Running Tests
+
+```bash
+./run.sh test              # Run all tests
+./run.sh test --coverage   # With coverage report
+pytest tests/ -v           # Verbose output
+pytest tests/test_face_detection.py -k "test_opencv"  # Specific test
+```
+
+### Project Structure
+
+```
+├── src/                   # Main source code
+├── tests/                 # Unit and integration tests
+├── notebooks/             # Jupyter notebooks for training
+├── scripts/               # Utility scripts
+├── config/                # Configuration files
+├── data/                  # Models and data
+│   ├── models/           # Pre-trained models
+│   ├── raw/              # Raw input data
+│   └── processed/        # Processed data
+└── logs/                  # Application logs
+```
+
+### Adding a New Detection Backend
+
+1. Create `src/visual/detection/mybackend.py`
+2. Inherit from `BaseFaceDetector`
+3. Implement `detect(image) -> List[DetectedFace]`
+4. Register in `src/visual/detection/__init__.py`
+
+```python
+from .base import BaseFaceDetector
+from .types import DetectedFace
+
+class MyBackendDetector(BaseFaceDetector):
+    def detect(self, image: np.ndarray) -> List[DetectedFace]:
+        # Your implementation
+        pass
+```
+
+### Configuration Constants
+
+Processing constants are centralized in `src/constants.py` and loaded from `config/config.yaml`. To add new constants:
+
+1. Add defaults to `config/config.yaml` under appropriate section
+2. Add to the corresponding dataclass in `src/constants.py`
+3. Use via `get_*_config()` functions
+
+### Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Write tests for new functionality
+4. Ensure all tests pass: `./run.sh test`
+5. Format code: `black src/ tests/`
+6. Submit a pull request
 
 ---
 

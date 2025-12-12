@@ -15,10 +15,9 @@
 #   stop            - Stop containers
 #   api             - Start the Face Management API
 #   test            - Run tests
-#   detect          - Test face detection
 #   recognize       - Test face recognition
 #   classify        - Test sound classification
-#   camera          - Test camera
+#   camera          - Test camera with face detection
 #   demo            - Run demo showing all features
 #   shell           - Open shell in container
 #   logs            - View container logs
@@ -32,7 +31,7 @@
 #   ./run.sh build                  # Build container
 #   ./run.sh start                  # Start system in container
 #   ./run.sh api                    # Start API server
-#   ./run.sh detect --camera        # Live detection with camera
+#   ./run.sh camera                 # Live camera with face detection
 #   ./run.sh shell                  # Debug inside container
 #   ./run.sh start --local          # Use local venv (no Docker)
 #
@@ -225,10 +224,6 @@ COMMANDS:
 
   api [--port PORT] Start the Face Management API
   
-  detect [--camera] [--image PATH] [--backend NAME]
-                    Test face detection
-                    Backends: haar_cascade, mediapipe, opencv_dnn, dlib, dlib_cnn
-  
   recognize [--camera] [--image PATH] [--detection-backend NAME] [--embedding-backend NAME]
                     Test face recognition with model selection
                     Detection backends: haar_cascade, mediapipe, opencv_dnn, dlib, dlib_cnn
@@ -277,7 +272,7 @@ EXAMPLES:
   ./run.sh build                  # Build Docker image
   ./run.sh start                  # Start in container (default)
   ./run.sh api                    # API server in container
-  ./run.sh detect --camera        # Camera detection in container
+  ./run.sh camera                 # Live camera with face detection
   ./run.sh recognize --camera     # Camera recognition with default models
   ./run.sh recognize --camera --detection-backend opencv_dnn --embedding-backend dlib
   ./run.sh compare                # Compare all face recognition models
@@ -468,73 +463,24 @@ cmd_test() {
     fi
 }
 
-# Face detection test
+# Face detection test (camera mode is default)
 cmd_detect() {
     local image=""
-    local camera=""
     
     # Parse remaining args
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --camera) shift ;;  # Accepted but ignored (camera is default)
             --image) image="$2"; shift 2 ;;
-            --camera) camera="1"; shift ;;
             *) shift ;;
         esac
     done
     
-    if [[ -n "$USE_LOCAL" ]]; then
-        ensure_venv
-        print_header "Face Detection Test (Local)"
-        
-        if [[ -n "$camera" ]]; then
-            print_info "Starting camera face detection (press 'q' to quit)..."
-            python3 scripts/camera_demo.py
-        elif [[ -n "$image" ]]; then
-            print_info "Detecting faces in: $image"
-            python3 scripts/camera_demo.py --image "$image"
-        else
-            print_info "Running basic face detection test..."
-            python3 -c "
-from src import FaceDetector
-import numpy as np
-
-detector = FaceDetector(backend='opencv_dnn')
-print('✓ Face detector initialized')
-
-# Test with blank image
-img = np.zeros((480, 640, 3), dtype=np.uint8)
-faces = detector.detect(img)
-print(f'✓ Detection test passed (found {len(faces)} faces in test image)')
-print('✓ Face detection is working!')
-"
-        fi
+    # Image mode or camera mode (default)
+    if [[ -n "$image" ]]; then
+        cmd_camera --image "$image"
     else
-        check_docker
-        ensure_image
-        print_header "Face Detection Test (Container)"
-        
-        if [[ -n "$camera" ]]; then
-            print_info "Starting camera face detection (press 'q' to quit)..."
-            docker_run python scripts/camera_demo.py
-        elif [[ -n "$image" ]]; then
-            print_info "Detecting faces in: $image"
-            docker_run python scripts/camera_demo.py --image "$image"
-        else
-            print_info "Running basic face detection test..."
-            docker_run python -c "
-from src import FaceDetector
-import numpy as np
-
-detector = FaceDetector(backend='opencv_dnn')
-print('✓ Face detector initialized')
-
-# Test with blank image
-img = np.zeros((480, 640, 3), dtype=np.uint8)
-faces = detector.detect(img)
-print(f'✓ Detection test passed (found {len(faces)} faces in test image)')
-print('✓ Face detection is working!')
-"
-        fi
+        cmd_camera
     fi
 }
 
@@ -862,7 +808,7 @@ cmd_demo() {
     local args=""
     [[ -n "$USE_LOCAL" ]] && args="--local"
     
-    cmd_detect
+    cmd_camera
     echo ""
     cmd_recognize
     echo ""
@@ -987,46 +933,27 @@ cmd_install() {
             --prod) mode="prod"; shift ;;
             --dev) mode="dev"; shift ;;
             --pi) mode="pi"; shift ;;
+            --arm64) mode="arm64"; shift ;;
             *) shift ;;
         esac
     done
     
     print_header "Installing IoT Home Security ($mode mode)"
-    print_info "This installs to local virtual environment"
     
-    case "$mode" in
-        pi)
-            print_info "Running Raspberry Pi installation..."
-            if [[ -f "raspberry_pi/scripts/install.sh" ]]; then
-                chmod +x raspberry_pi/scripts/install.sh
-                ./raspberry_pi/scripts/install.sh
-            else
-                ensure_venv
-                pip install -r requirements-pi.txt
-                pip install -e .
-            fi
-            ;;
-        prod)
-            ensure_venv
-            print_info "Installing in production mode..."
-            pip install --upgrade pip wheel
-            if is_raspberry_pi; then
-                pip install -r requirements-pi.txt
-            else
-                pip install -r requirements.txt
-            fi
-            pip install .
-            print_success "Installation complete"
-            ;;
-        dev|*)
-            ensure_venv
-            print_info "Installing in development mode..."
-            pip install --upgrade pip wheel
-            pip install -r requirements.txt
-            pip install -e ".[dev]"
-            print_success "Development installation complete"
-            ;;
-    esac
+    # Delegate to the unified install script
+    if [[ -f "scripts/install.sh" ]]; then
+        chmod +x scripts/install.sh
+        ./scripts/install.sh "--$mode" --dir "$(pwd)"
+    else
+        print_error "scripts/install.sh not found"
+        print_info "Falling back to basic installation..."
+        ensure_venv
+        pip install --upgrade pip wheel
+        pip install -r requirements.txt
+        pip install -e ".[dev]"
+    fi
+    
+    print_success "Installation complete"
 }
 
 # ============================================================
