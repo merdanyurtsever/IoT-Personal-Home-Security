@@ -110,12 +110,15 @@ docker_run() {
     local devices=""
     local display_args=""
     local port_args=""
+    local user_args=""
     
     # Check for camera access
     if [[ "$*" == *"camera"* ]] || [[ "$*" == *"--camera"* ]] || [[ "$*" == *"video"* ]]; then
         if [[ -e /dev/video0 ]]; then
-            devices="--device /dev/video0"
-            print_info "Camera device /dev/video0 attached"
+            # Add video devices and run as root for device access
+            devices="--device /dev/video0 --device /dev/video1 --privileged --security-opt label=disable"
+            user_args="--user root"
+            print_info "Camera devices attached (/dev/video0, /dev/video1)"
         else
             print_warning "No camera device found at /dev/video0"
         fi
@@ -133,6 +136,7 @@ docker_run() {
     fi
     
     docker run --rm $interactive \
+        $user_args \
         -v "$SCRIPT_DIR/src:/app/src:ro" \
         -v "$SCRIPT_DIR/config:/app/config:ro" \
         -v "$SCRIPT_DIR/data:/app/data" \
@@ -221,9 +225,18 @@ COMMANDS:
 
   api [--port PORT] Start the Face Management API
   
-  detect [--camera] [--image PATH]
+  detect [--camera] [--image PATH] [--backend NAME]
                     Test face detection
-  recognize         Test face recognition
+                    Backends: haar_cascade, mediapipe, opencv_dnn, dlib, dlib_cnn
+  
+  recognize [--camera] [--image PATH] [--detection-backend NAME] [--embedding-backend NAME]
+                    Test face recognition with model selection
+                    Detection backends: haar_cascade, mediapipe, opencv_dnn, dlib, dlib_cnn
+                    Embedding backends: opencv_dnn, dlib, tflite, mobilenetv2
+  
+  compare           Compare face recognition models
+                    Outputs performance metrics for all available models
+  
   classify          Test sound classification
   camera            Test camera interface
   demo              Run interactive demo
@@ -244,11 +257,30 @@ OPTIONS:
   --local           Run with local venv instead of Docker
   --rebuild         Force rebuild Docker image before running
 
+MODEL OPTIONS (for recognize command):
+  --detection-backend, -d    Face detection model
+                             haar_cascade  - Fast, less accurate
+                             mediapipe     - Good balance (requires GPU)
+                             opencv_dnn    - Default, works everywhere
+                             dlib          - HOG-based detector
+                             dlib_cnn      - CNN detector (requires GPU)
+  
+  --embedding-backend, -e    Face embedding/recognition model
+                             opencv_dnn    - Default, OpenFace 128D
+                             dlib          - dlib ResNet 128D
+                             tflite        - TFLite optimized 512D
+                             mobilenetv2   - MobileNetV2 512D
+  
+  --threshold, -t            Recognition similarity threshold (0.0-1.0, default: 0.6)
+
 EXAMPLES:
   ./run.sh build                  # Build Docker image
   ./run.sh start                  # Start in container (default)
   ./run.sh api                    # API server in container
   ./run.sh detect --camera        # Camera detection in container
+  ./run.sh recognize --camera     # Camera recognition with default models
+  ./run.sh recognize --camera --detection-backend opencv_dnn --embedding-backend dlib
+  ./run.sh compare                # Compare all face recognition models
   ./run.sh shell                  # Debug shell in container
   ./run.sh test                   # Run tests in container
 
@@ -384,18 +416,18 @@ cmd_api() {
         
         python3 << EOF
 import uvicorn
-from src.face_service import FaceRecognizerService
 from src.api import create_app
+from src import FaceRecognizer
 
-# Initialize service
-service = FaceRecognizerService(
-    database_path="data/faces.db",
-    upload_dir="data/raw/faces/uploads",
-    embedding_backend="dlib",
+# Initialize recognizer
+recognizer = FaceRecognizer(
+    embedding_backend="opencv_dnn",
+    detection_backend="opencv_dnn",
+    similarity_threshold=0.6,
 )
 
-# Create app
-app = create_app(service=service)
+# Create app with recognizer
+app = create_app()
 
 # Run server
 uvicorn.run(app, host="0.0.0.0", port=$port)
@@ -463,7 +495,7 @@ cmd_detect() {
         else
             print_info "Running basic face detection test..."
             python3 -c "
-from src.face import FaceDetector
+from src import FaceDetector
 import numpy as np
 
 detector = FaceDetector(backend='opencv_dnn')
@@ -490,7 +522,7 @@ print('✓ Face detection is working!')
         else
             print_info "Running basic face detection test..."
             docker_run python -c "
-from src.face import FaceDetector
+from src import FaceDetector
 import numpy as np
 
 detector = FaceDetector(backend='opencv_dnn')
@@ -506,27 +538,223 @@ print('✓ Face detection is working!')
     fi
 }
 
-# Face recognition test
+# Face recognition test with model selection
 cmd_recognize() {
-    local test_code="
-from src.face import FaceRecognizer
-
-recognizer = FaceRecognizer(model='opencv_dnn', threshold=0.6)
-print('✓ Face recognizer initialized')
-print(f'  Embedding size: {recognizer.embedding_size}')
-print(f'  Enrolled faces: {recognizer.get_enrolled_count()}')
-print('✓ Face recognition is working!')
-"
+    local image=""
+    local camera=""
+    local detection_backend="opencv_dnn"
+    local embedding_backend="opencv_dnn"
+    local threshold="0.6"
+    
+    # Parse remaining args
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --image|-i) image="$2"; shift 2 ;;
+            --camera) camera="1"; shift ;;
+            --detection-backend|-d) detection_backend="$2"; shift 2 ;;
+            --embedding-backend|-e) embedding_backend="$2"; shift 2 ;;
+            --threshold|-t) threshold="$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
     
     if [[ -n "$USE_LOCAL" ]]; then
         ensure_venv
         print_header "Face Recognition Test (Local)"
-        python3 -c "$test_code"
+        print_info "Detection: $detection_backend, Embedding: $embedding_backend, Threshold: $threshold"
+        
+        if [[ -n "$camera" ]]; then
+            print_info "Starting camera face recognition (press 'q' to quit)..."
+            python3 -c "
+import sys
+sys.path.insert(0, '.')
+from src.visual import FaceRecognizer
+from src.sensors.camera import Camera
+from pathlib import Path
+import cv2
+
+recognizer = FaceRecognizer(
+    embedding_backend='$embedding_backend',
+    detection_backend='$detection_backend',
+    similarity_threshold=$threshold,
+)
+print(f'Detection: $detection_backend, Embedding: $embedding_backend ({recognizer.embedding_dim}D)')
+
+# Load watch list
+watch_list = Path('data/raw/faces/watch_list')
+if watch_list.exists():
+    results = recognizer.register_from_directory(str(watch_list))
+    print(f'Loaded watch list: {results}')
+
+with Camera() as camera:
+    print('Camera started. Press q to quit.')
+    for frame in camera.stream():
+        result = recognizer.recognize_face(frame.image)
+        output = frame.image.copy()
+        if result.bbox:
+            x, y, w, h = result.bbox
+            color = (0, 0, 255) if result.should_alert else (0, 255, 0)
+            cv2.rectangle(output, (x, y), (x + w, y + h), color, 2)
+            label = f'{result.identity}: {result.confidence:.0%}'
+            cv2.putText(output, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+        cv2.imshow('Face Recognition', output)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    cv2.destroyAllWindows()
+"
+        elif [[ -n "$image" ]]; then
+            print_info "Recognizing faces in: $image"
+            python3 -c "
+import sys
+sys.path.insert(0, '.')
+from src.visual import FaceRecognizer
+import cv2
+
+recognizer = FaceRecognizer(
+    embedding_backend='$embedding_backend',
+    detection_backend='$detection_backend',
+    similarity_threshold=$threshold,
+)
+print(f'Detection: $detection_backend, Embedding: $embedding_backend ({recognizer.embedding_dim}D)')
+
+image = cv2.imread('$image')
+if image is None:
+    print(f'Error: Could not load $image')
+    exit(1)
+
+result = recognizer.recognize_face(image)
+print(f'Identity: {result.identity}')
+print(f'Category: {result.category}')
+print(f'Confidence: {result.confidence:.1%}')
+print(f'Should alert: {result.should_alert}')
+"
+        else
+            print_info "Running basic face recognition test..."
+            python3 -c "
+import sys
+sys.path.insert(0, '.')
+from src.visual import FaceRecognizer
+
+recognizer = FaceRecognizer(
+    embedding_backend='$embedding_backend',
+    detection_backend='$detection_backend',
+    similarity_threshold=$threshold,
+)
+print('✓ Face recognizer initialized')
+print(f'  Detection backend: $detection_backend')
+print(f'  Embedding backend: $embedding_backend')
+print(f'  Embedding size: {recognizer.embedding_dim}D')
+print(f'  Threshold: $threshold')
+print(f'  Registered faces: {len(recognizer.get_registered_identities())}')
+print('✓ Face recognition is working!')
+"
+        fi
     else
         check_docker
         ensure_image
         print_header "Face Recognition Test (Container)"
-        docker_run python -c "$test_code"
+        print_info "Detection: $detection_backend, Embedding: $embedding_backend, Threshold: $threshold"
+        
+        if [[ -n "$camera" ]]; then
+            print_info "Starting camera face recognition (press 'q' to quit)..."
+            docker_run python -c "
+from src.visual import FaceRecognizer
+from src.sensors.camera import Camera
+from pathlib import Path
+import cv2
+
+recognizer = FaceRecognizer(
+    embedding_backend='$embedding_backend',
+    detection_backend='$detection_backend',
+    similarity_threshold=$threshold,
+)
+print(f'Detection: $detection_backend, Embedding: $embedding_backend ({recognizer.embedding_dim}D)')
+
+# Load watch list
+watch_list = Path('data/raw/faces/watch_list')
+if watch_list.exists():
+    results = recognizer.register_from_directory(str(watch_list))
+    print(f'Loaded watch list: {results}')
+
+with Camera() as camera:
+    print('Camera started. Press q to quit.')
+    for frame in camera.stream():
+        result = recognizer.recognize_face(frame.image)
+        output = frame.image.copy()
+        if result.bbox:
+            x, y, w, h = result.bbox
+            color = (0, 0, 255) if result.should_alert else (0, 255, 0)
+            cv2.rectangle(output, (x, y), (x + w, y + h), color, 2)
+            label = f'{result.identity}: {result.confidence:.0%}'
+            cv2.putText(output, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+        cv2.imshow('Face Recognition', output)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    cv2.destroyAllWindows()
+"
+        elif [[ -n "$image" ]]; then
+            print_info "Recognizing faces in: $image"
+            docker_run python -c "
+from src.visual import FaceRecognizer
+import cv2
+
+recognizer = FaceRecognizer(
+    embedding_backend='$embedding_backend',
+    detection_backend='$detection_backend',
+    similarity_threshold=$threshold,
+)
+print(f'Detection: $detection_backend, Embedding: $embedding_backend ({recognizer.embedding_dim}D)')
+
+image = cv2.imread('$image')
+if image is None:
+    print(f'Error: Could not load $image')
+    exit(1)
+
+result = recognizer.recognize_face(image)
+print(f'Identity: {result.identity}')
+print(f'Category: {result.category}')
+print(f'Confidence: {result.confidence:.1%}')
+print(f'Should alert: {result.should_alert}')
+"
+        else
+            print_info "Running basic face recognition test..."
+            docker_run python -c "
+from src.visual import FaceRecognizer
+
+recognizer = FaceRecognizer(
+    embedding_backend='$embedding_backend',
+    detection_backend='$detection_backend',
+    similarity_threshold=$threshold,
+)
+print('✓ Face recognizer initialized')
+print(f'  Detection backend: $detection_backend')
+print(f'  Embedding backend: $embedding_backend')
+print(f'  Embedding size: {recognizer.embedding_dim}D')
+print(f'  Threshold: $threshold')
+print(f'  Registered faces: {len(recognizer.get_registered_identities())}')
+print('✓ Face recognition is working!')
+"
+        fi
+    fi
+}
+
+# Model comparison command
+cmd_compare() {
+    print_header "Face Recognition Model Comparison"
+    print_info "Comparing all available face recognition models..."
+    print_info "Make sure you have test images in:"
+    print_info "  - data/raw/faces/watch_list/ (your face)"
+    print_info "  - data/raw/faces/test_same_person/ (more of your face)"
+    print_info "  - data/raw/faces/test_different_people/ (other people)"
+    echo ""
+    
+    if [[ -n "$USE_LOCAL" ]]; then
+        ensure_venv
+        python3 scripts/model_comparison.py
+    else
+        check_docker
+        ensure_image
+        docker_run python scripts/model_comparison.py
     fi
 }
 
@@ -572,7 +800,7 @@ cmd_camera() {
     done
     
     local test_code="
-from src.sensors import CameraInterface
+from src.sensors.camera import Camera, CameraConfig, CameraBackend
 import time
 
 use_pi = False
@@ -584,10 +812,11 @@ except:
     pass
 
 print(f'Using Pi Camera: {use_pi}')
-camera = CameraInterface(use_picamera=use_pi)
+backend = CameraBackend.PICAMERA if use_pi else CameraBackend.OPENCV
+camera = Camera(CameraConfig(backend=backend))
 
 print('Starting camera...')
-camera.start()
+camera.open()
 print('✓ Camera started')
 
 frames = 0
@@ -660,23 +889,20 @@ cmd_train() {
     print_header "Model Training"
     
     local train_face_code="
-from src.face_service import FaceRecognizerService
+from src import FaceRecognizer
 from pathlib import Path
+import cv2
 
-service = FaceRecognizerService(
-    database_path='data/faces.db',
-    upload_dir='data/raw/faces/uploads',
+recognizer = FaceRecognizer(
+    embedding_backend='opencv_dnn',
+    detection_backend='opencv_dnn',
 )
+
 watch_list_dir = Path('data/raw/faces/watch_list')
 if watch_list_dir.exists():
-    for person_dir in watch_list_dir.iterdir():
-        if person_dir.is_dir():
-            print(f'Processing {person_dir.name}...')
-            for img_path in person_dir.glob('*.jpg'):
-                service.add_face(person_dir.name, str(img_path), 'watch_list')
-    print('Starting embedding extraction...')
-    job_id, total = service.start_processing()
-    print(f'Processing {total} faces in job {job_id}')
+    results = recognizer.register_from_directory(str(watch_list_dir))
+    print(f'Registered faces: {results}')
+    print('✓ Face registration complete!')
 else:
     print('No watch list directory found. Add faces to data/raw/faces/watch_list/')
 "
@@ -856,6 +1082,7 @@ main() {
         test)       cmd_test "$@" ;;
         detect)     cmd_detect "$@" ;;
         recognize)  cmd_recognize "$@" ;;
+        compare)    cmd_compare "$@" ;;
         classify)   cmd_classify "$@" ;;
         camera)     cmd_camera "$@" ;;
         demo)       cmd_demo "$@" ;;

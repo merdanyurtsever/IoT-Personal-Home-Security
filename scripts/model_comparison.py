@@ -110,14 +110,14 @@ def test_openface_opencv() -> Optional[ModelResult]:
     print("=" * 60)
     
     try:
-        from src.face import OpenCVDNNEmbeddingBackend
+        from src.visual import OpenCVDNNEmbeddingBackend
         
         start = time.time()
         backend = OpenCVDNNEmbeddingBackend()
         load_time = (time.time() - start) * 1000
         
         print(f"  ✓ Model loaded in {load_time:.0f}ms")
-        print(f"  ✓ Embedding size: {backend.embedding_size}D")
+        print(f"  ✓ Embedding size: {backend.embedding_dim}D")
         
         return _run_model_test("OpenFace-128D", backend, load_time)
         
@@ -134,7 +134,7 @@ def test_openface_clahe() -> Optional[ModelResult]:
     print("=" * 60)
     
     try:
-        from src.face import OpenCVDNNEmbeddingBackend
+        from src.visual.recognition.embeddings import OpenCVDNNEmbeddingBackend
         
         start = time.time()
         inner_backend = OpenCVDNNEmbeddingBackend()
@@ -142,10 +142,10 @@ def test_openface_clahe() -> Optional[ModelResult]:
         
         # Create wrapper with CLAHE preprocessing
         class OpenFaceCLAHEBackend:
-            embedding_size = inner_backend.embedding_size
-            
             def __init__(self, backend):
                 self.backend = backend
+                self.embedding_dim = backend.embedding_dim
+                self.embedding_size = backend.embedding_dim  # Alias for compatibility
             
             def extract(self, face_image: np.ndarray) -> np.ndarray:
                 # Apply CLAHE preprocessing
@@ -155,7 +155,7 @@ def test_openface_clahe() -> Optional[ModelResult]:
         backend = OpenFaceCLAHEBackend(inner_backend)
         
         print(f"  ✓ Model loaded in {load_time:.0f}ms")
-        print(f"  ✓ Embedding size: {backend.embedding_size}D")
+        print(f"  ✓ Embedding size: {backend.embedding_dim}D")
         
         return _run_model_test("OpenFace+CLAHE", backend, load_time)
         
@@ -171,14 +171,14 @@ def test_mobilenetv2() -> Optional[ModelResult]:
     print("=" * 60)
     
     try:
-        from src.face import MobileNetV2EmbeddingBackend
+        from src.visual import MobileNetV2EmbeddingBackend
         
         start = time.time()
         backend = MobileNetV2EmbeddingBackend()
         load_time = (time.time() - start) * 1000
         
         print(f"  ✓ Model loaded in {load_time:.0f}ms")
-        print(f"  ✓ Embedding size: {backend.embedding_size}D")
+        print(f"  ✓ Embedding size: {backend.embedding_dim}D")
         
         return _run_model_test("MobileNetV2-512D", backend, load_time)
         
@@ -210,7 +210,8 @@ def test_arcface() -> Optional[ModelResult]:
         
         # Create wrapper backend
         class ArcFaceBackend:
-            embedding_size = 512
+            embedding_dim = 512
+            embedding_size = 512  # Alias for compatibility
             
             def __init__(self, app):
                 self.app = app
@@ -298,7 +299,8 @@ def test_facenet() -> Optional[ModelResult]:
         print(f"  ✓ Embedding size: 512D")
         
         class FaceNetBackend:
-            embedding_size = 512
+            embedding_dim = 512
+            embedding_size = 512  # Alias for compatibility
             
             def __init__(self, model, device):
                 self.model = model
@@ -412,9 +414,12 @@ def _run_model_test(name: str, backend, load_time: float) -> Optional[ModelResul
             different_person_scores.append(sim)
             print(f"    Different: {ref_name} vs {name} = {sim:.2%}")
     
+    # Get embedding size with fallback for compatibility
+    emb_dim = getattr(backend, 'embedding_dim', getattr(backend, 'embedding_size', 128))
+    
     return ModelResult(
         name=name,
-        embedding_size=backend.embedding_size,
+        embedding_size=emb_dim,
         same_person_scores=same_person_scores,
         different_person_scores=different_person_scores,
         extraction_time_ms=avg_extraction_time,

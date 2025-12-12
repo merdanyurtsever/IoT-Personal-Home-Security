@@ -18,11 +18,10 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.face import (
+from src.visual import (
     FaceDetector,
     FaceRecognizer,
     FaceCategory,
-    DetectionMode,
 )
 
 # Colors (BGR format)
@@ -105,48 +104,29 @@ def main():
     # Higher threshold = stricter matching, fewer false positives
     # 0.6 = good balance between accuracy and expression tolerance
     print("Initializing face recognizer (OpenCV DNN)...")
-    recognizer = FaceRecognizer(model="opencv_dnn", threshold=0.6)
+    recognizer = FaceRecognizer(
+        embedding_backend="opencv_dnn",
+        detection_backend="opencv_dnn",
+        similarity_threshold=0.6,
+    )
     
     # Load watch list faces
     watch_list_dir = project_root / "data" / "raw" / "faces" / "watch_list"
     if watch_list_dir.exists():
         print(f"Loading watch list from: {watch_list_dir}")
         
-        # Load individual images (not in subdirectories)
-        image_count = 0
-        for img_path in watch_list_dir.glob("*.jpg"):
-            try:
-                img = cv2.imread(str(img_path))
-                if img is not None:
-                    # Use filename as person name
-                    person_name = img_path.stem
-                    recognizer.enroll(person_name, img, FaceCategory.WATCH_LIST)
-                    image_count += 1
-                    print(f"  Enrolled: {person_name}")
-            except Exception as e:
-                print(f"  Failed to load {img_path.name}: {e}")
+        results = recognizer.register_from_directory(str(watch_list_dir))
+        for name, count in results.items():
+            print(f"  Enrolled: {name} ({count} images)")
         
-        # Also load from subdirectories
-        for ext in ["*.jpg", "*.jpeg", "*.png"]:
-            for img_path in watch_list_dir.glob(f"**/{ext}"):
-                if img_path.parent != watch_list_dir:  # Skip root-level (already processed)
-                    try:
-                        img = cv2.imread(str(img_path))
-                        if img is not None:
-                            person_name = img_path.parent.name
-                            recognizer.enroll(person_name, img, FaceCategory.WATCH_LIST)
-                            image_count += 1
-                            print(f"  Enrolled: {person_name} ({img_path.name})")
-                    except Exception as e:
-                        print(f"  Failed to load {img_path.name}: {e}")
-        
-        print(f"Loaded {image_count} watch list face(s)")
+        print(f"Loaded {sum(results.values())} watch list face(s)")
     else:
         print(f"No watch list directory found at: {watch_list_dir}")
     
     print()
-    print(f"Total enrolled: {recognizer.get_enrolled_count()} face(s)")
-    print(f"Enrolled names: {recognizer.get_enrolled_names()}")
+    identities = recognizer.get_registered_identities()
+    print(f"Total enrolled: {len(identities)} person(s)")
+    print(f"Enrolled names: {identities}")
     print()
     
     # Open camera
@@ -199,7 +179,7 @@ def main():
                 
                 if face_img.size > 0:
                     # Recognize face
-                    result = recognizer.recognize(face_img)
+                    result = recognizer.recognize_face(face_img, detect_attributes=False)
                     
                     # Draw box with appropriate color
                     draw_face_box(
@@ -211,7 +191,7 @@ def main():
                     )
                     
                     # Log threats
-                    if result.is_threat and frame_count % 30 == 0:  # Log every 30 frames
+                    if result.should_alert and frame_count % 30 == 0:  # Log every 30 frames
                         print(f"⚠️  THREAT DETECTED: {result.identity} (confidence: {result.confidence:.0%})")
             
             # Show frame

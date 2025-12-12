@@ -93,10 +93,10 @@ make help      # Show all commands
 | `tflite` | 512D |
 
 ```python
-from src.face import FaceDetector, FaceRecognizer
+from src import FaceDetector, FaceRecognizer
 
-detector = FaceDetector(backend="dlib")
-recognizer = FaceRecognizer(model="dlib")
+detector = FaceDetector(backend="opencv_dnn")
+recognizer = FaceRecognizer(embedding_backend="opencv_dnn")
 ```
 
 ---
@@ -131,19 +131,30 @@ test --all         # Include hardware
 
 ```
 ├── src/
-│   ├── face.py          # Detection & recognition
-│   ├── face_service.py  # Database & processing
-│   ├── audio.py         # Sound classification
-│   ├── sensors.py       # Camera, mic, PIR
-│   ├── alerts.py        # Notifications
-│   ├── api.py           # REST API
-│   └── cli.py           # CLI
-├── config/config.yaml   # Configuration
+│   ├── __init__.py          # Re-exports (backwards compatible)
+│   ├── visual/              # Face detection & recognition
+│   │   ├── detection/       # Face detectors (opencv_dnn, haar, mediapipe, dlib)
+│   │   ├── recognition/     # Face recognizers & embeddings
+│   │   ├── pipeline.py      # FaceSecurityPipeline
+│   │   └── utils.py         # Image utilities
+│   ├── audio/               # Sound classification
+│   │   ├── classifier.py    # SoundClassifier
+│   │   ├── features.py      # Audio feature extraction
+│   │   └── preprocessing.py # Audio preprocessing
+│   ├── sensors/             # Hardware interfaces
+│   │   └── camera/          # Camera capture (OpenCV, PiCamera)
+│   ├── alerts.py            # Notifications
+│   ├── api.py               # REST API
+│   └── cli.py               # CLI
+├── config/config.yaml       # Configuration
 ├── data/
 │   ├── raw/faces/watch_list/  # Watch list photos
-│   └── models/          # ML models
+│   └── models/              # ML models
+├── scripts/
+│   └── camera_demo.py       # Live camera demo
 ├── docker-compose.yml
-└── Dockerfile
+├── Dockerfile
+└── run.sh                   # Universal run script
 ```
 
 ---
@@ -154,15 +165,28 @@ test --all         # Include hardware
 
 ```yaml
 face_detection:
-  model: opencv_dnn  # haar_cascade, mediapipe, dlib
+  backend: opencv_dnn  # haar_cascade, mediapipe, dlib
 
 face_recognition:
-  model: opencv_dnn  # dlib, tflite, mobilenetv2
+  embedding_backend: opencv_dnn  # dlib, tflite, mobilenetv2
   similarity_threshold: 0.6
 
 api:
   port: 8000
 ```
+
+---
+
+## Camera Access (Docker)
+
+For live camera detection in Docker, the container runs with elevated privileges to access `/dev/video0`:
+
+```bash
+# This is handled automatically by run.sh
+./run.sh detect --camera
+```
+
+**Note:** On systems with SELinux (Fedora/RHEL), camera access requires `--privileged --security-opt label=disable --user root`.
 
 ---
 

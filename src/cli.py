@@ -43,25 +43,31 @@ def cmd_start(args):
         logging.getLogger().setLevel(logging.DEBUG)
     
     try:
-        from .face_service import FaceRecognizerService
-        from .api import create_app
+        from .visual import FaceRecognizer, FaceSecurityPipeline
+        from .api import create_app, set_face_service
         import uvicorn
         
-        # Initialize face service
+        # Initialize face recognizer as the service
         recog_config = config.get("face_recognition", {})
-        db_config = config.get("database", {})
         api_config = config.get("api", {})
         
-        service = FaceRecognizerService(
-            database_path=db_config.get("faces_db", "data/faces.db"),
-            upload_dir=recog_config.get("upload_dir", "data/raw/faces/uploads"),
+        # Create a simple service wrapper for the API
+        recognizer = FaceRecognizer(
             embedding_backend=recog_config.get("model", "opencv_dnn"),
+            detection_backend=recog_config.get("detection_backend", "opencv_dnn"),
             similarity_threshold=recog_config.get("similarity_threshold", 0.6),
         )
+        
+        # Register faces from watch_list directory if exists
+        watch_list_dir = recog_config.get("watch_list_dir", "data/raw/faces/watch_list")
+        if Path(watch_list_dir).exists():
+            results = recognizer.register_from_directory(watch_list_dir)
+            logger.info(f"✓ Registered {sum(results.values())} faces from watch list")
+        
         logger.info("✓ Face recognition service initialized")
         
         # Start API server
-        app = create_app(service=service)
+        app = create_app()
         host = api_config.get("host", "0.0.0.0")
         port = api_config.get("port", 8000)
         
@@ -84,7 +90,7 @@ def cmd_detect(args):
     import numpy as np
     
     try:
-        from .face import FaceDetector
+        from .visual import FaceDetector
         import cv2
         
         detector = FaceDetector(backend=args.backend)
@@ -101,7 +107,8 @@ def cmd_detect(args):
             logger.info(f"Found {len(faces)} face(s)")
             
             for i, face in enumerate(faces):
-                logger.info(f"  [{i+1}] pos=({face.x},{face.y}) size={face.width}x{face.height} conf={face.confidence:.0%}")
+                x, y, w, h = face.bbox
+                logger.info(f"  [{i+1}] pos=({x},{y}) size={w}x{h} conf={face.confidence:.0%}")
             
             if args.output:
                 output = detector.draw_detections(image, faces)
@@ -110,21 +117,18 @@ def cmd_detect(args):
                 
         elif args.camera:
             # Live camera detection
-            from .sensors import CameraInterface
+            from .sensors.camera import Camera
             
-            camera = CameraInterface()
-            camera.start()
-            logger.info("Camera started. Press 'q' to quit.")
-            
-            try:
+            with Camera() as camera:
+                logger.info("Camera started. Press 'q' to quit.")
+                
                 for frame in camera.stream():
-                    faces = detector.detect(frame)
-                    output = detector.draw_detections(frame, faces)
+                    faces = detector.detect(frame.image)
+                    output = detector.draw_detections(frame.image, faces)
                     cv2.imshow("Face Detection", output)
                     if cv2.waitKey(1) & 0xFF == ord('q'):
                         break
-            finally:
-                camera.stop()
+                        
                 cv2.destroyAllWindows()
         else:
             # Quick test
@@ -144,8 +148,99 @@ def cmd_test(args):
     
     # Face detection
     logger.info("[1/4] Face detection...")
+
+
+def cmd_recognize(args):
+    """Run face recognition on image or camera."""
+    import numpy as np
+    
     try:
-        from .face import FaceDetector
+        from .visual import FaceRecognizer
+        import cv2
+        
+        recognizer = FaceRecognizer(
+            embedding_backend=args.embedding_backend,
+            detection_backend=args.detection_backend,
+            similarity_threshold=args.threshold,
+        )
+        logger.info(f"Detection: {args.detection_backend}, Embedding: {args.embedding_backend}")
+        logger.info(f"Threshold: {args.threshold}, Embedding dim: {recognizer.embedding_dim}D")
+        
+        # Load watch list
+        watch_list_dir = Path("data/raw/faces/watch_list")
+        if watch_list_dir.exists():
+            results = recognizer.register_from_directory(str(watch_list_dir))
+            logger.info(f"Loaded watch list: {results}")
+        
+        if args.image:
+            # Process single image
+            image = cv2.imread(args.image)
+            if image is None:
+                logger.error(f"Could not load: {args.image}")
+                sys.exit(1)
+            
+            result = recognizer.recognize_face(image)
+            logger.info(f"Identity: {result.identity}")
+            logger.info(f"Category: {result.category}")
+            logger.info(f"Confidence: {result.confidence:.1%}")
+            logger.info(f"Should alert: {result.should_alert}")
+                
+        elif args.camera:
+            # Live camera recognition
+            from .sensors.camera import Camera
+            
+            with Camera() as camera:
+                logger.info("Camera started. Press 'q' to quit.")
+                
+                for frame in camera.stream():
+                    result = recognizer.recognize_face(frame.image)
+                    
+                    # Draw results
+                    output = frame.image.copy()
+                    if result.bbox:
+                        x, y, w, h = result.bbox
+                        color = (0, 0, 255) if result.should_alert else (0, 255, 0)
+                        cv2.rectangle(output, (x, y), (x + w, y + h), color, 2)
+                        label = f"{result.identity}: {result.confidence:.0%}"
+                        cv2.putText(output, label, (x, y - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                    
+                    cv2.imshow("Face Recognition", output)
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        break
+                        
+                cv2.destroyAllWindows()
+        else:
+            # Quick test
+            test_img = np.zeros((480, 640, 3), dtype=np.uint8)
+            result = recognizer.recognize_face(test_img)
+            logger.info(f"✓ Recognition working (embedding: {recognizer.embedding_dim}D)")
+            
+    except ImportError as e:
+        logger.error(f"Missing dependency: {e}")
+        sys.exit(1)
+
+
+def cmd_compare(args):
+    """Compare face recognition models."""
+    logger.info("Running model comparison...")
+    
+    try:
+        # Import and run the comparison script
+        import subprocess
+        import sys
+        
+        result = subprocess.run(
+            [sys.executable, "scripts/model_comparison.py"],
+            check=False,
+        )
+        sys.exit(result.returncode)
+        
+    except Exception as e:
+        logger.error(f"Model comparison failed: {e}")
+        sys.exit(1)
+    try:
+        from .visual import FaceDetector
         detector = FaceDetector()
         detector.detect(np.zeros((100, 100, 3), dtype=np.uint8))
         logger.info("  ✓ OK")
@@ -157,9 +252,9 @@ def cmd_test(args):
     # Face recognition
     logger.info("[2/4] Face recognition...")
     try:
-        from .face import FaceRecognizer
-        recognizer = FaceRecognizer(model="opencv_dnn")
-        logger.info(f"  ✓ OK (embedding: {recognizer.embedding_size}D)")
+        from .visual import FaceRecognizer
+        recognizer = FaceRecognizer(embedding_backend="opencv_dnn")
+        logger.info(f"  ✓ OK (embedding: {recognizer.embedding_dim}D)")
         results.append(("Face recognition", True))
     except Exception as e:
         logger.info(f"  ✗ {e}")
@@ -180,13 +275,15 @@ def cmd_test(args):
     if args.all:
         logger.info("[4/4] Camera...")
         try:
-            from .sensors import CameraInterface
-            camera = CameraInterface()
-            camera.start()
-            frame = camera.capture()
-            camera.stop()
-            logger.info(f"  ✓ OK ({frame.shape[1]}x{frame.shape[0]})")
-            results.append(("Camera", True))
+            from .sensors.camera import Camera
+            with Camera() as camera:
+                frame = camera.read()
+                if frame:
+                    logger.info(f"  ✓ OK ({frame.width}x{frame.height})")
+                    results.append(("Camera", True))
+                else:
+                    logger.info("  ✗ No frame captured")
+                    results.append(("Camera", False))
         except Exception as e:
             logger.info(f"  ✗ {e}")
             results.append(("Camera", False))
@@ -231,6 +328,26 @@ Examples:
                           choices=["haar_cascade", "mediapipe", "opencv_dnn", "dlib"],
                           help="Detection backend")
     
+    # recognize
+    recog_p = subparsers.add_parser("recognize", help="Face recognition")
+    recog_p.add_argument("-i", "--image", help="Image file")
+    recog_p.add_argument("--camera", action="store_true", help="Use camera")
+    recog_p.add_argument("-d", "--detection-backend", default="opencv_dnn",
+                         choices=["haar_cascade", "mediapipe", "opencv_dnn", "dlib", "dlib_cnn"],
+                         help="Face detection backend")
+    recog_p.add_argument("-e", "--embedding-backend", default="opencv_dnn",
+                         choices=["opencv_dnn", "dlib", "tflite", "mobilenetv2"],
+                         help="Face embedding/recognition backend")
+    recog_p.add_argument("-t", "--threshold", type=float, default=0.6,
+                         help="Recognition similarity threshold (0.0-1.0)")
+    
+    # compare - model comparison tool
+    compare_p = subparsers.add_parser("compare", help="Compare face recognition models")
+    compare_p.add_argument("--models", nargs="*", 
+                          choices=["opencv_dnn", "dlib", "tflite", "mobilenetv2", "all"],
+                          default=["all"],
+                          help="Models to compare (default: all available)")
+    
     # test
     test_p = subparsers.add_parser("test", help="Test components")
     test_p.add_argument("--all", action="store_true", help="Include hardware tests")
@@ -244,6 +361,8 @@ Examples:
     commands = {
         "start": cmd_start,
         "detect": cmd_detect,
+        "recognize": cmd_recognize,
+        "compare": cmd_compare,
         "test": cmd_test,
     }
     

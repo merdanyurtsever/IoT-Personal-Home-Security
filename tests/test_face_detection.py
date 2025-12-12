@@ -9,21 +9,21 @@ class TestFaceDetector:
     
     def test_detector_initialization(self):
         """Test detector initializes correctly."""
-        from src.face import FaceDetector
+        from src import FaceDetector
         
         detector = FaceDetector(backend="haar_cascade")
         assert detector.backend_name == "haar_cascade"
     
     def test_detector_invalid_backend(self):
         """Test detector raises error for invalid backend."""
-        from src.face import FaceDetector
+        from src import FaceDetector
         
         with pytest.raises(ValueError):
             FaceDetector(backend="invalid_backend")
     
     def test_detect_returns_list(self):
         """Test detection returns a list."""
-        from src.face import FaceDetector
+        from src import FaceDetector
         
         detector = FaceDetector()
         
@@ -35,7 +35,7 @@ class TestFaceDetector:
     
     def test_detected_face_properties(self):
         """Test DetectedFace dataclass properties."""
-        from src.face import DetectedFace
+        from src import DetectedFace
         
         face = DetectedFace(x=100, y=50, width=80, height=100, confidence=0.95)
         
@@ -49,7 +49,7 @@ class TestFaceRecognizer:
     
     def test_recognizer_initialization(self):
         """Test recognizer initializes correctly with default backend."""
-        from src.face import FaceRecognizer
+        from src import FaceRecognizer
         
         # Default backend is now opencv_dnn (no dlib required)
         recognizer = FaceRecognizer(model="opencv_dnn", threshold=0.6)
@@ -58,7 +58,7 @@ class TestFaceRecognizer:
     
     def test_recognize_returns_result(self):
         """Test recognition returns a result."""
-        from src.face import FaceRecognizer
+        from src import FaceRecognizer
         
         recognizer = FaceRecognizer()  # Uses opencv_dnn by default
         
@@ -71,7 +71,7 @@ class TestFaceRecognizer:
     
     def test_cosine_similarity(self):
         """Test cosine similarity calculation."""
-        from src.face import FaceRecognizer
+        from src import FaceRecognizer
         
         a = np.array([1, 0, 0])
         b = np.array([1, 0, 0])
@@ -89,7 +89,7 @@ class TestFaceAttributeDetection:
     
     def test_face_attribute_enum(self):
         """Test FaceAttribute enum values."""
-        from src.face import FaceAttribute
+        from src import FaceAttribute
         
         assert FaceAttribute.GLASSES.value == "glasses"
         assert FaceAttribute.BEARD.value == "beard"
@@ -97,7 +97,7 @@ class TestFaceAttributeDetection:
     
     def test_attribute_result(self):
         """Test AttributeResult dataclass."""
-        from src.face import AttributeResult, FaceAttribute
+        from src import AttributeResult, FaceAttribute
         
         result = AttributeResult(
             attribute=FaceAttribute.GLASSES,
@@ -114,7 +114,7 @@ class TestFaceAttributeDetection:
     
     def test_attribute_profile(self):
         """Test AttributeProfile with multiple attributes."""
-        from src.face import AttributeProfile, AttributeResult, FaceAttribute
+        from src import AttributeProfile, AttributeResult, FaceAttribute
         
         profile = AttributeProfile({
             FaceAttribute.GLASSES: AttributeResult(FaceAttribute.GLASSES, True, 0.9),
@@ -131,7 +131,7 @@ class TestFaceAttributeDetection:
     
     def test_attribute_profile_matches(self):
         """Test AttributeProfile matching logic."""
-        from src.face import AttributeProfile, AttributeResult, FaceAttribute
+        from src import AttributeProfile, AttributeResult, FaceAttribute
         
         profile = AttributeProfile({
             FaceAttribute.GLASSES: AttributeResult(FaceAttribute.GLASSES, True, 0.9),
@@ -148,7 +148,7 @@ class TestFaceAttributeDetection:
     
     def test_attribute_filter_basic(self):
         """Test basic AttributeFilter creation and matching."""
-        from src.face import (
+        from src import (
             AttributeFilter, AttributeProfile, AttributeResult, FaceAttribute
         )
         
@@ -172,7 +172,7 @@ class TestFaceAttributeDetection:
     
     def test_attribute_filter_chaining(self):
         """Test decorator pattern chaining for filters."""
-        from src.face import AttributeFilter, FaceAttribute
+        from src import AttributeFilter, FaceAttribute
         
         # Chain filters using and_require
         filter1 = AttributeFilter().require(FaceAttribute.GLASSES)
@@ -193,7 +193,7 @@ class TestFaceAttributeDetection:
     
     def test_attribute_filter_chain(self):
         """Test AttributeFilterChain for multiple named profiles."""
-        from src.face import (
+        from src import (
             AttributeFilterChain, AttributeFilter, AttributeProfile, 
             AttributeResult, FaceAttribute
         )
@@ -224,7 +224,7 @@ class TestFaceAttributeDetection:
     
     def test_haar_attribute_detector(self):
         """Test HaarAttributeDetector initialization."""
-        from src.face import HaarAttributeDetector, FaceAttribute
+        from src import HaarAttributeDetector, FaceAttribute
         
         detector = HaarAttributeDetector()
         
@@ -235,7 +235,7 @@ class TestFaceAttributeDetection:
     
     def test_haar_attribute_detector_detect(self):
         """Test HaarAttributeDetector.detect with a blank image."""
-        from src.face import HaarAttributeDetector
+        from src import HaarAttributeDetector
         
         detector = HaarAttributeDetector()
         
@@ -251,7 +251,7 @@ class TestFaceAttributeDetection:
     
     def test_face_category_threat_profile(self):
         """Test FaceCategory.THREAT_PROFILE for attribute-based detection."""
-        from src.face import FaceCategory, RecognitionResult
+        from src import FaceCategory, RecognitionResult
         
         result = RecognitionResult(
             identity="attribute:glasses_beard",
@@ -270,7 +270,7 @@ class TestDetectionModes:
     
     def test_detection_mode_enum(self):
         """Test DetectionMode enum values."""
-        from src.face import DetectionMode
+        from src import DetectionMode
         
         assert DetectionMode.EMBEDDING_ONLY.value == "embedding_only"
         assert DetectionMode.ATTRIBUTE_ONLY.value == "attribute_only"
@@ -280,7 +280,7 @@ class TestDetectionModes:
     
     def test_pipeline_with_attribute_only_mode(self):
         """Test pipeline in ATTRIBUTE_ONLY mode (no face recognition)."""
-        from src.face import (
+        from src import (
             FaceSecurityPipeline, DetectionMode, FaceDetector,
             AttributeFilter, FaceAttribute, HaarAttributeDetector
         )
@@ -304,7 +304,7 @@ class TestDetectionModes:
     
     def test_pipeline_mode_change(self):
         """Test changing pipeline mode at runtime."""
-        from src.face import FaceSecurityPipeline, DetectionMode, FaceDetector, HaarAttributeDetector
+        from src import FaceSecurityPipeline, DetectionMode, FaceDetector, HaarAttributeDetector
         
         # Start with ATTRIBUTE_ONLY to avoid needing face_recognition library
         pipeline = FaceSecurityPipeline(
@@ -329,7 +329,7 @@ class TestDetectionModes:
         Note: When face_recognition is not available, this test verifies
         the mode is set correctly. The actual recognizer may not be initialized.
         """
-        from src.face import FaceSecurityPipeline, DetectionMode, FaceDetector, HaarAttributeDetector
+        from src import FaceSecurityPipeline, DetectionMode, FaceDetector, HaarAttributeDetector
         
         # Use ATTRIBUTE_ONLY mode to avoid needing face_recognition library
         pipeline = FaceSecurityPipeline(
@@ -344,7 +344,7 @@ class TestDetectionModes:
     
     def test_recognize_by_attributes_direct(self):
         """Test _recognize_by_attributes method directly."""
-        from src.face import (
+        from src import (
             FaceSecurityPipeline, DetectionMode, FaceDetector,
             AttributeFilter, FaceAttribute, HaarAttributeDetector,
             FaceCategory
