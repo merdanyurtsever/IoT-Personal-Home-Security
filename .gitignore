@@ -132,9 +132,13 @@ data/raw/faces/uploads/**/*
 !data/raw/faces/watch_list/.gitkeep
 !data/raw/faces/README.md
 
-# Processed data
+# Processed data - İSTİSNALAR EKLENDİ
 data/processed/*
 !data/processed/.gitkeep
+!data/processed/X_balanced.npy
+!data/processed/y_balanced.npy
+!data/processed/X.npy
+!data/processed/y.npy
 
 # Logs
 logs/
@@ -162,7 +166,8 @@ firebase-adminsdk*.json
 # Documents (Word files - keep for reference)
 # documents/
 
-# Trained models (should be stored in releases or cloud storage)
+# Trained models - İSTİSNALAR EKLENDİ
 data/models/**/*.h5
 data/models/**/*.tflite
 data/models/**/*.onnx
+!data/models/svm_audio_model.pkl
