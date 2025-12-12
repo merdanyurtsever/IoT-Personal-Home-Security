@@ -131,30 +131,46 @@ test --all         # Include hardware
 
 ```
 ├── src/
-│   ├── __init__.py          # Re-exports (backwards compatible)
-│   ├── visual/              # Face detection & recognition
-│   │   ├── detection/       # Face detectors (opencv_dnn, haar, mediapipe, dlib)
+│   ├── face/                # 📦 INDEPENDENT Face Module (can be shared)
+│   │   ├── __init__.py      # Public API
+│   │   ├── __main__.py      # Run as: python -m src.face
+│   │   ├── cli.py           # Standalone CLI
+│   │   ├── api.py           # Standalone REST API
+│   │   ├── detection/       # Face detectors
 │   │   ├── recognition/     # Face recognizers & embeddings
 │   │   ├── pipeline.py      # FaceSecurityPipeline
 │   │   └── utils.py         # Image utilities
 │   ├── audio/               # Sound classification
-│   │   ├── classifier.py    # SoundClassifier
-│   │   ├── features.py      # Audio feature extraction
-│   │   └── preprocessing.py # Audio preprocessing
 │   ├── sensors/             # Hardware interfaces
-│   │   └── camera/          # Camera capture (OpenCV, PiCamera)
-│   ├── alerts.py            # Notifications
-│   ├── api.py               # REST API
-│   └── cli.py               # CLI
+│   ├── api.py               # Main system API
+│   └── cli.py               # Main system CLI
+├── docker/
+│   ├── Dockerfile           # Single Dockerfile for all platforms
+│   └── docker-compose.yml
 ├── config/config.yaml       # Configuration
 ├── data/
 │   ├── raw/faces/watch_list/  # Watch list photos
 │   └── models/              # ML models
-├── scripts/
-│   └── camera_demo.py       # Live camera demo
-├── docker-compose.yml
-├── Dockerfile
-└── run.sh                   # Universal run script
+├── requirements.txt         # Single requirements file
+└── run.sh                   # Simple run script
+```
+
+### Face Module (Independent)
+
+The `src/face/` module can be used independently:
+
+```bash
+# Run standalone
+python -m src.face detect --image photo.jpg
+python -m src.face detect --camera
+python -m src.face api --port 8000
+python -m src.face test
+
+# Or use in code
+from src.face import FaceDetector, FaceRecognizer
+
+detector = FaceDetector()
+recognizer = FaceRecognizer()
 ```
 
 ---

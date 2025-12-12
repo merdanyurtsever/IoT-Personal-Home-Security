@@ -1,174 +1,115 @@
-# IoT Home Security - Makefile (Container-First)
-# ================================================
-#
-# All commands run inside Docker containers by default.
-# Use `make <cmd>-local` targets to run with local venv.
+# IoT Home Security - Makefile
+# ==============================
+# Simple commands for development and running
 #
 # Usage:
-#   make build       # Build Docker image
-#   make start       # Start system in container
-#   make api         # Start API in container
-#   make test        # Run tests in container
-#   make shell       # Debug shell in container
-#   make help        # Show help
-#
+#   make start     - Start API server
+#   make detect    - Run face detection
+#   make test      - Run tests
+#   make help      - Show all commands
 
-.PHONY: help build start stop restart status api test demo shell logs clean
-.PHONY: detect recognize classify camera train
-.PHONY: start-local api-local test-local install install-dev install-pi
+.PHONY: help start api detect camera test clean docker-build docker-run
 
 # Default target
 help:
-	@echo "IoT Home Security - Container-First Commands"
-	@echo "============================================="
+	@echo "IoT Home Security - Commands"
+	@echo "============================"
 	@echo ""
-	@echo "Docker Commands (default):"
-	@echo "  make build          Build Docker image"
-	@echo "  make start          Start system in container"
-	@echo "  make stop           Stop containers"
-	@echo "  make restart        Restart containers"
-	@echo "  make status         Check container status"
-	@echo "  make api            Start API server in container"
-	@echo "  make shell          Open shell in container"
-	@echo "  make logs           View container logs"
+	@echo "Running:"
+	@echo "  make start        Start API server"
+	@echo "  make detect       Test face detection"
+	@echo "  make camera       Live camera detection"
+	@echo "  make test         Run tests"
 	@echo ""
-	@echo "Testing (in container):"
-	@echo "  make test           Run all tests"
-	@echo "  make test-cov       Run tests with coverage"
-	@echo "  make demo           Run interactive demo"
-	@echo "  make detect         Test face detection"
-	@echo "  make detect-camera  Test with camera"
-	@echo "  make recognize      Test face recognition"
-	@echo "  make classify       Test sound classification"
-	@echo "  make camera         Test camera interface"
+	@echo "Face Module (standalone):"
+	@echo "  make face-detect  Face detection (standalone module)"
+	@echo "  make face-api     Face API server only"
+	@echo "  make face-test    Test face module"
 	@echo ""
-	@echo "Training (in container):"
-	@echo "  make train-face     Train face recognition"
-	@echo "  make train-sound    Train sound classification"
-	@echo ""
-	@echo "Local Mode (uses venv instead of Docker):"
-	@echo "  make start-local    Start with local venv"
-	@echo "  make api-local      API with local venv"
-	@echo "  make test-local     Tests with local venv"
-	@echo "  make install        Install to local venv"
-	@echo "  make install-dev    Install dev dependencies"
-	@echo "  make install-pi     Install for Raspberry Pi"
+	@echo "Docker:"
+	@echo "  make docker-build Build container"
+	@echo "  make docker-run   Run in container"
+	@echo "  make docker-shell Shell in container"
 	@echo ""
 	@echo "Maintenance:"
-	@echo "  make clean          Clean up generated files"
-	@echo "  make docker-clean   Remove containers/images"
-	@echo ""
+	@echo "  make clean        Clean generated files"
+	@echo "  make install      Install dependencies"
 
 # ============================================================
-# DOCKER COMMANDS (Primary - run everything in containers)
+# RUNNING (Local)
 # ============================================================
-
-build:
-	@./run.sh build
 
 start:
-	@./run.sh start
-
-stop:
-	@./run.sh stop
-
-restart:
-	@./run.sh restart
-
-status:
-	@./run.sh status
+	python -m src.cli start
 
 api:
-	@./run.sh api
-
-shell:
-	@./run.sh shell
-
-logs:
-	@./run.sh logs --follow
-
-# Testing in container
-test:
-	@./run.sh test
-
-test-cov:
-	@./run.sh test --coverage
-
-demo:
-	@./run.sh demo
+	python -m src.cli start
 
 detect:
-	@./run.sh detect
-
-detect-camera:
-	@./run.sh detect --camera
-
-recognize:
-	@./run.sh recognize
-
-classify:
-	@./run.sh classify
+	python -m src.cli detect
 
 camera:
-	@./run.sh camera
+	python -m src.cli detect --camera
 
-# Training in container
-train-face:
-	@./run.sh train --face
-
-train-sound:
-	@./run.sh train --sound
-
-train-all:
-	@./run.sh train --all
+test:
+	python -m pytest tests/ -v
 
 # ============================================================
-# LOCAL MODE (uses venv, for when Docker isn't available)
+# FACE MODULE (Standalone)
 # ============================================================
 
-start-local:
-	@./run.sh start --local
+face-detect:
+	python -m src.face detect
 
-api-local:
-	@./run.sh api --local
+face-camera:
+	python -m src.face detect --camera
 
-test-local:
-	@./run.sh test --local
+face-api:
+	python -m src.face api
 
-demo-local:
-	@./run.sh demo --local
+face-test:
+	python -m src.face test
 
-# Installation (for local mode)
+# ============================================================
+# DOCKER
+# ============================================================
+
+docker-build:
+	docker build -f docker/Dockerfile -t iot-home-security .
+
+docker-run:
+	docker run -p 8000:8000 -v ./data:/app/data iot-home-security
+
+docker-shell:
+	docker run -it --rm iot-home-security bash
+
+docker-camera:
+	docker run -it --rm --device /dev/video0 \
+		-e DISPLAY=${DISPLAY} -v /tmp/.X11-unix:/tmp/.X11-unix \
+		iot-home-security python -m src.face detect --camera
+
+# ============================================================
+# DEVELOPMENT
+# ============================================================
+
 install:
-	@./run.sh install
+	pip install -r requirements.txt
 
 install-dev:
-	@./run.sh install --dev
+	pip install -r requirements.txt
+	pip install pytest pytest-cov black flake8
 
-install-pi:
-	@./run.sh install --pi
+lint:
+	black src/ tests/
+	flake8 src/ tests/
 
 # ============================================================
-# MAINTENANCE
+# CLEANUP
 # ============================================================
 
 clean:
-	@echo "Cleaning up..."
-	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
-	@find . -type f -name "*.pyo" -delete 2>/dev/null || true
-	@find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
-	@rm -rf build/ dist/ .pytest_cache/ .coverage htmlcov/ 2>/dev/null || true
-	@rm -rf .venv/ venv/ 2>/dev/null || true
-	@echo "Done!"
-
-docker-clean:
-	@echo "Cleaning Docker resources..."
-	docker compose down --rmi local --volumes --remove-orphans 2>/dev/null || true
-	docker image prune -f
-	@echo "Done!"
-
-# Quick aliases
-run: start
-dev: start
-pi: install-pi
+	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name "*.pyc" -delete 2>/dev/null || true
+	rm -rf .pytest_cache/ .coverage htmlcov/ 2>/dev/null || true
+	rm -rf *.egg-info/ build/ dist/ 2>/dev/null || true
+	@echo "Cleaned!"

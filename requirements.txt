@@ -1,70 +1,51 @@
-# IoT Personal Home Security - Requirements
-# ==========================================
+# IoT Home Security - Requirements
+# ==================================
+# Single requirements file for all platforms
+# Works on x86_64 (dev) and ARM64 (Raspberry Pi)
 
-# Core ML/AI Libraries
-tensorflow>=2.10.0
-torch>=2.0.0
-torchaudio>=2.0.0
-torchvision>=0.15.0
-
-# Computer Vision
-opencv-python>=4.8.0
-opencv-python-headless>=4.8.0  # For headless environments (RPi)
-face-recognition>=1.3.0
-dlib>=19.24.0
-mediapipe>=0.10.0
-
-# Audio Processing
-librosa>=0.10.0
-soundfile>=0.12.0
-pyaudio>=0.2.13
+# Core
+numpy>=1.24.0,<2.0
+opencv-python-headless>=4.8.0
 scipy>=1.11.0
-
-# Data Science & Visualization
-numpy>=1.24.0
-pandas>=2.0.0
-matplotlib>=3.7.0
-seaborn>=0.12.0
-scikit-learn>=1.3.0
-
-# Web API Framework
-fastapi>=0.104.0
-uvicorn[standard]>=0.24.0
-python-multipart>=0.0.6
-pydantic>=2.5.0
-
-# Jupyter & Notebooks
-jupyter>=1.0.0
-jupyterlab>=4.0.0
-ipywidgets>=8.0.0
-
-# Model Optimization & Deployment
-onnx>=1.14.0
-onnxruntime>=1.15.0
-tflite-runtime>=2.13.0  # For Raspberry Pi
-
-# Raspberry Pi Specific
-RPi.GPIO>=0.7.1  # GPIO control
-picamera2>=0.3.12  # Camera module
-gpiozero>=2.0  # Simplified GPIO
-
-# Notifications & Cloud
-requests>=2.31.0
-paho-mqtt>=1.6.0  # MQTT for IoT
-firebase-admin>=6.2.0  # Push notifications
-twilio>=8.10.0  # SMS notifications
-
-# Utilities
-pyyaml>=6.0
-python-dotenv>=1.0.0
-tqdm>=4.66.0
 Pillow>=10.0.0
 
-# Testing
-pytest>=7.4.0
-pytest-cov>=4.1.0
+# Config
+PyYAML>=6.0
 
-# Linting & Formatting
-black>=23.9.0
-flake8>=6.1.0
-isort>=5.12.0
+# API
+fastapi>=0.104.0
+uvicorn>=0.24.0
+python-multipart>=0.0.6
+
+# ML/Inference (CPU-friendly)
+scikit-learn>=1.3.0
+onnxruntime>=1.16.0
+
+# Logging
+loguru>=0.7.0
+
+# Testing (optional - for development)
+pytest>=7.4.0
+
+# ============================================================
+# Optional: Install these only if you need specific features
+# ============================================================
+
+# For dlib-based detection/recognition:
+# dlib>=19.24.0
+
+# For MediaPipe face detection:
+# mediapipe>=0.10.0
+
+# For InsightFace models:
+# insightface>=0.7.3
+
+# For YOLO detection:
+# ultralytics>=8.0.0
+
+# For TensorFlow Lite on Pi:
+# tflite-runtime
+
+# For Raspberry Pi GPIO:
+# RPi.GPIO>=0.7.0
+# gpiozero>=2.0.0

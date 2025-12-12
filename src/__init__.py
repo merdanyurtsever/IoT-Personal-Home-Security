@@ -1,6 +1,6 @@
 """IoT Personal Home Security source package."""
 
-from .visual import (
+from .face import (
     FaceDetector,
     DetectedFace,
     FaceRecognizer,

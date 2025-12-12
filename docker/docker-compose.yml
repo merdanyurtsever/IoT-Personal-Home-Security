@@ -8,15 +8,17 @@
 
 services:
   app:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     image: iot-home-security:latest
     container_name: home-security
     
     volumes:
-      - ./src:/app/src:ro
-      - ./config:/app/config:ro
-      - ./data:/app/data
-      - ./logs:/app/logs
+      - ../src:/app/src:ro
+      - ../config:/app/config:ro
+      - ../data:/app/data
+      - ../logs:/app/logs
     
     ports:
       - "8000:8000"
@@ -44,14 +46,14 @@ services:
     devices:
       - /dev/video0:/dev/video0
     volumes:
-      - ./src:/app/src:ro
-      - ./config:/app/config:ro
-      - ./data:/app/data
+      - ../src:/app/src:ro
+      - ../config:/app/config:ro
+      - ../data:/app/data
       - /tmp/.X11-unix:/tmp/.X11-unix:ro
     environment:
       - PYTHONUNBUFFERED=1
       - DISPLAY=${DISPLAY:-:0}
     network_mode: host
     ports: []
-    command: ["python", "-m", "src.cli", "detect", "--camera"]
+    command: ["python", "-m", "src.face", "detect", "--camera"]
     restart: "no"

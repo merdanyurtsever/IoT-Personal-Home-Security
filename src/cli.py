@@ -43,7 +43,7 @@ def cmd_start(args):
         logging.getLogger().setLevel(logging.DEBUG)
     
     try:
-        from .visual import FaceRecognizer, FaceSecurityPipeline
+        from .face import FaceRecognizer, FaceSecurityPipeline
         from .api import create_app, set_face_service
         import uvicorn
         
@@ -90,7 +90,7 @@ def cmd_detect(args):
     import numpy as np
     
     try:
-        from .visual import FaceDetector
+        from .face import FaceDetector
         import cv2
         
         detector = FaceDetector(backend=args.backend)
@@ -155,7 +155,7 @@ def cmd_recognize(args):
     import numpy as np
     
     try:
-        from .visual import FaceRecognizer
+        from .face import FaceRecognizer
         import cv2
         
         recognizer = FaceRecognizer(
@@ -240,7 +240,7 @@ def cmd_compare(args):
         logger.error(f"Model comparison failed: {e}")
         sys.exit(1)
     try:
-        from .visual import FaceDetector
+        from .face import FaceDetector
         detector = FaceDetector()
         detector.detect(np.zeros((100, 100, 3), dtype=np.uint8))
         logger.info("  ✓ OK")
@@ -252,7 +252,7 @@ def cmd_compare(args):
     # Face recognition
     logger.info("[2/4] Face recognition...")
     try:
-        from .visual import FaceRecognizer
+        from .face import FaceRecognizer
         recognizer = FaceRecognizer(embedding_backend="opencv_dnn")
         logger.info(f"  ✓ OK (embedding: {recognizer.embedding_dim}D)")
         results.append(("Face recognition", True))

@@ -70,7 +70,7 @@ def get_recognizer():
     """Get the global face recognizer instance."""
     global _recognizer
     if _recognizer is None:
-        from .visual import FaceRecognizer
+        from .face import FaceRecognizer
         _recognizer = FaceRecognizer(
             embedding_backend="opencv_dnn",
             detection_backend="opencv_dnn",
