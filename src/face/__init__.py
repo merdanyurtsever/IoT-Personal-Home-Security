@@ -23,6 +23,7 @@ from .viewfinder import (
     expand_bbox,
     cosine_similarity,
     load_watch_list,
+    find_watch_list_dir,
     run_viewfinder,
 )
 
@@ -35,6 +36,7 @@ __all__ = [
     "expand_bbox",
     "cosine_similarity",
     "load_watch_list",
+    "find_watch_list_dir",
     "run_viewfinder",
 ]
 

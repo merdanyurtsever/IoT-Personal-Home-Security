@@ -1,121 +1,101 @@
-# Face Recognition Module
+# Face Recognition Module (ArcFace)
 
-A self-contained face recognition module using **ArcFace** (InsightFace buffalo_l model).
-
-## Features
-
-- **Real-time face detection** using RetinaFace
-- **512D face embeddings** using ArcFace (ResNet-50 backbone)
-- **Brightness enhancement** (CLAHE) for dim environments
-- **Watch list matching** for threat detection
-- **Simple API** for integration
+Self-contained face recognition using InsightFace's ArcFace model (512D embeddings).
 
 ## Quick Start
 
-### Installation
-
 ```bash
+# Install dependencies
 pip install -r requirements.txt
+
+# Create a watch list folder with face images
+mkdir watch_list
+cp /path/to/known/faces/*.jpg watch_list/
+
+# Run
+python -m src.face
 ```
 
-**Note:** On some systems, `insightface` may require a C++ compiler. If installation fails:
+## Directory Structure
+
+The module auto-detects watch list from these locations (in order):
+
+| Path | Description |
+|------|-------------|
+| `watch_list/` | Current directory |
+| `faces/` | Alternative name |
+| `data/watch_list/` | Data subdirectory |
+| `data/raw/faces/watch_list/` | Full project path |
+
+Or specify with `-w /path/to/faces`.
+
+Other directories:
+
+| Path | Purpose |
+|------|---------|
+| `captures/` | Saved frames (auto-created when pressing 'S') |
+| `~/.insightface/models/` | Model cache (auto-managed) |
+
+## Usage
+
+### Command Line
+
 ```bash
-# Set compiler (if needed)
-export CXX=/path/to/g++
-pip install insightface
+python -m src.face                      # Auto-detect watch list
+python -m src.face -w ./faces           # Custom watch list folder
+python -m src.face -t 0.4               # Custom threshold
+python -m src.face -c 1                 # Use camera 1
+python -m src.face -s ./saved           # Custom save directory
 ```
 
-### Run Viewfinder
+### As Library
 
-```bash
-# From project root
-python -m src.face.viewfinder
+```python
+from src.face import ArcFaceRecognizer, FaceDatabase, load_watch_list
+from pathlib import Path
+import cv2
 
-# With custom watch list
-python -m src.face.viewfinder --watch-list /path/to/faces
+# Initialize
+recognizer = ArcFaceRecognizer()
 
-# Adjust threshold (lower = stricter matching)
-python -m src.face.viewfinder --threshold 0.4
+# Load watch list from directory
+database = load_watch_list(recognizer, Path("watch_list"))
+
+# Or add faces manually
+image = cv2.imread("person.jpg")
+embedding = recognizer.extract_embedding(image)
+if embedding is not None:
+    database.add("person_name", embedding)
+
+# Match against database
+match_name, score = database.find_match(query_embedding, threshold=0.35)
+if match_name:
+    print(f"Matched: {match_name} ({score:.2%})")
 ```
 
-### Viewfinder Controls
+## Controls
 
 | Key | Action |
 |-----|--------|
-| B | Toggle brightness enhancement |
-| R | Re-enroll faces from watch list |
-| +/- | Adjust recognition threshold |
-| Q/ESC | Quit |
+| `q` / `ESC` | Quit |
+| `r` | Reload watch list |
+| `s` | Save current frame |
+| `b` | Toggle brightness enhancement |
+| `SPACE` | Pause/Resume |
+| `+` / `-` | Adjust threshold |
 
-## API Usage
+## Watch List Format
 
-```python
-from src.face.viewfinder import ArcFaceRecognizer, FaceDatabase, enhance_brightness
+Place face images in the watch list directory:
+- Filename becomes the identity (e.g., `john_doe.jpg` → "john_doe")
+- Supports: `.jpg`, `.jpeg`, `.png`
+- One clear face per image recommended
 
-# Initialize recognizer
-recognizer = ArcFaceRecognizer(model_name="buffalo_l")
-
-# Load and process an image
-import cv2
-image = cv2.imread("photo.jpg")
-image = enhance_brightness(image)  # Optional: enhance dim images
-
-# Detect faces
-faces = recognizer.detect_faces(image)
-for (x, y, w, h) in faces:
-    face_crop = image[y:y+h, x:x+w]
-    
-    # Extract embedding
-    embedding = recognizer.extract_embedding(face_crop)
-    if embedding is not None:
-        print(f"Embedding shape: {embedding.shape}")  # (512,)
-
-# Build a face database
-db = FaceDatabase()
-db.add("person1", embedding1)
-db.add("person2", embedding2)
-
-# Match a query face
-match_name, score = db.find_match(query_embedding, threshold=0.35)
-if match_name:
-    print(f"Match: {match_name} ({score:.0%})")
-```
-
-## Model Options
-
-| Model | Accuracy | Speed | Size |
-|-------|----------|-------|------|
-| buffalo_l | Highest | Slower | ~280MB |
-| buffalo_s | Good | Fast | ~120MB |
-| buffalo_sc | Basic | Fastest | ~15MB |
-
-Default is `buffalo_l` for best accuracy.
-
-## Watch List
-
-Place face images in a directory (default: `data/raw/faces/watch_list/`).
-
-Supported formats: `.jpg`, `.jpeg`, `.png`
-
-The system will:
-1. Detect faces in each image
-2. Extract embeddings
-3. Match live camera faces against enrolled faces
-
-## Threshold Guidelines
-
-| Threshold | Description |
-|-----------|-------------|
-| 0.25-0.30 | Very strict (high security) |
-| 0.35 | **Default** - balanced |
-| 0.40-0.50 | Lenient (more matches) |
-
-## Files
+## Requirements
 
 ```
-src/face/
-├── __init__.py         # Module exports
-├── viewfinder.py       # Main viewfinder application
-├── requirements.txt    # Dependencies
-└── README.md           # This file
+numpy
+opencv-python
+insightface
+onnxruntime
 ```

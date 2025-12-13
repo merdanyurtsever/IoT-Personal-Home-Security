@@ -131,6 +131,7 @@ data/raw/faces/uploads/**/*
 !data/raw/faces/.gitkeep
 !data/raw/faces/watch_list/.gitkeep
 !data/raw/faces/README.md
+captures/
 
 # Processed data - İSTİSNALAR EKLENDİ
 data/processed/*

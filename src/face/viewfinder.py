@@ -22,8 +22,26 @@ from typing import List, Optional, Tuple
 import cv2
 import numpy as np
 
-# Default paths (relative to this file's location)
-DEFAULT_WATCH_LIST = Path(__file__).parent.parent.parent / "data" / "raw" / "faces" / "watch_list"
+
+def find_watch_list_dir() -> Optional[Path]:
+    """Find watch list directory from common locations."""
+    # Try paths relative to current working directory
+    candidates = [
+        Path("watch_list"),
+        Path("faces"),
+        Path("data/watch_list"),
+        Path("data/raw/faces/watch_list"),
+    ]
+    # Also try relative to this module
+    module_dir = Path(__file__).parent
+    candidates.extend([
+        module_dir.parent.parent / "data" / "raw" / "faces" / "watch_list",
+        module_dir.parent.parent / "data" / "watch_list",
+    ])
+    for path in candidates:
+        if path.exists() and path.is_dir():
+            return path
+    return None
 
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
@@ -255,16 +273,28 @@ def load_watch_list(recognizer: ArcFaceRecognizer,
     return db
 
 
-def run_viewfinder(watch_list_dir: Path = DEFAULT_WATCH_LIST,
+def run_viewfinder(watch_list_dir: Optional[Path] = None,
                    threshold: float = 0.35,
-                   camera_id: int = 0) -> None:
+                   camera_id: int = 0,
+                   save_dir: Optional[Path] = None) -> None:
     """Run the face recognition viewfinder.
     
     Args:
-        watch_list_dir: Directory containing watch list images
+        watch_list_dir: Directory containing watch list images (auto-detected if None)
         threshold: Recognition similarity threshold (0.0-1.0)
         camera_id: Camera device ID
+        save_dir: Directory to save captured frames (default: ./captures)
     """
+    # Find watch list directory if not provided
+    if watch_list_dir is None:
+        watch_list_dir = find_watch_list_dir()
+        if watch_list_dir is None:
+            watch_list_dir = Path("watch_list")
+            print(f"[WARN] No watch list found. Create '{watch_list_dir}/' with face images.")
+    
+    # Set default save directory
+    if save_dir is None:
+        save_dir = Path("captures")
     print("=" * 60)
     print("FACE RECOGNITION VIEWFINDER")
     print("=" * 60)
@@ -295,6 +325,8 @@ def run_viewfinder(watch_list_dir: Path = DEFAULT_WATCH_LIST,
     print("\nControls:")
     print("  B      : Toggle brightness enhancement")
     print("  R      : Re-enroll faces")
+    print("  S      : Save current frame")
+    print("  SPACE  : Pause/Resume")
     print("  +/-    : Adjust threshold")
     print("  Q/ESC  : Quit")
     print()
@@ -302,11 +334,19 @@ def run_viewfinder(watch_list_dir: Path = DEFAULT_WATCH_LIST,
     # State
     enhance_brightness_enabled = True
     frame_times = []
+    paused = False
+    last_frame = None
     
     while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+        if not paused:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            last_frame = frame.copy()
+        else:
+            if last_frame is None:
+                continue
+            frame = last_frame.copy()
         
         frame_start = time.time()
         
@@ -389,6 +429,14 @@ def run_viewfinder(watch_list_dir: Path = DEFAULT_WATCH_LIST,
         elif key == ord('-'):
             threshold = max(0.0, threshold - 0.05)
             print(f"Threshold: {threshold:.2f}")
+        elif key == ord('s'):
+            save_dir.mkdir(parents=True, exist_ok=True)
+            filename = save_dir / f"capture_{int(time.time())}.jpg"
+            cv2.imwrite(str(filename), frame)
+            print(f"Saved: {filename}")
+        elif key == ord(' '):
+            paused = not paused
+            print(f"{'PAUSED' if paused else 'RESUMED'}")
     
     cap.release()
     cv2.destroyAllWindows()
@@ -410,8 +458,8 @@ Examples:
     parser.add_argument(
         "--watch-list", "-w",
         type=Path,
-        default=DEFAULT_WATCH_LIST,
-        help="Directory containing watch list face images"
+        default=None,
+        help="Directory containing watch list face images (auto-detected)"
     )
     parser.add_argument(
         "--threshold", "-t",
@@ -425,12 +473,19 @@ Examples:
         default=0,
         help="Camera device ID (default: 0)"
     )
+    parser.add_argument(
+        "--save-dir", "-s",
+        type=Path,
+        default=None,
+        help="Directory for saved frames (default: ./captures)"
+    )
     
     args = parser.parse_args()
     run_viewfinder(
-        watch_list_dir=args.watch_list,
+        watch_list_dir=args.watch_list if args.watch_list else None,
         threshold=args.threshold,
-        camera_id=args.camera
+        camera_id=args.camera,
+        save_dir=args.save_dir
     )
 
 
