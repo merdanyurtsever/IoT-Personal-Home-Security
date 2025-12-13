@@ -276,7 +276,9 @@ def load_watch_list(recognizer: ArcFaceRecognizer,
 def run_viewfinder(watch_list_dir: Optional[Path] = None,
                    threshold: float = 0.35,
                    camera_id: int = 0,
-                   save_dir: Optional[Path] = None) -> None:
+                   save_dir: Optional[Path] = None,
+                   record: bool = False,
+                   record_fps: float = 15.0) -> None:
     """Run the face recognition viewfinder.
     
     Args:
@@ -295,6 +297,8 @@ def run_viewfinder(watch_list_dir: Optional[Path] = None,
     # Set default save directory
     if save_dir is None:
         save_dir = Path("captures")
+    # Video recording setup (moved after camera open)
+    video_writer = None
     print("=" * 60)
     print("FACE RECOGNITION VIEWFINDER")
     print("=" * 60)
@@ -321,6 +325,16 @@ def run_viewfinder(watch_list_dir: Optional[Path] = None,
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     print(f"  Camera resolution: {width}x{height}")
+
+    # Now that width/height are known, setup video writer if needed
+    if record:
+        save_dir.mkdir(parents=True, exist_ok=True)
+        from datetime import datetime
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        video_path = save_dir / f"recording_{ts}.mp4"
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        video_writer = cv2.VideoWriter(str(video_path), fourcc, record_fps, (width, height))
+        print(f"[INFO] Recording video to: {video_path}")
     
     print("\nControls:")
     print("  B      : Toggle brightness enhancement")
@@ -337,110 +351,150 @@ def run_viewfinder(watch_list_dir: Optional[Path] = None,
     paused = False
     last_frame = None
     
-    while True:
-        if not paused:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            last_frame = frame.copy()
-        else:
-            if last_frame is None:
+    import threading
+    import copy
+    frame_count = 0
+    model_frame = None
+    model_frame_time = 0
+    model_lock = threading.Lock()
+    stop_event = threading.Event()
+    # Shared state for recognition thread
+    recog_state = {
+        'frame': None,
+        'result': None,
+        'fps': 0.0,
+        'enhance': True,
+    }
+
+    def recognition_worker():
+        while not stop_event.is_set():
+            with model_lock:
+                frame = recog_state['frame']
+                enhance = recog_state['enhance']
+            if frame is None:
+                time.sleep(0.01)
                 continue
-            frame = last_frame.copy()
-        
-        frame_start = time.time()
-        
-        # Apply brightness enhancement
-        if enhance_brightness_enabled:
-            frame = enhance_brightness(frame)
-        
-        # Detect faces
-        faces = recognizer.detect_faces(frame)
-        
-        # Process each face
-        for (x, y, w, h) in faces:
-            # Expand bbox for embedding
-            ex, ey, ew, eh = expand_bbox(x, y, w, h, frame.shape)
-            ex2, ey2 = min(frame.shape[1], ex + ew), min(frame.shape[0], ey + eh)
-            
-            if ex2 <= ex or ey2 <= ey:
-                continue
-            
-            face_crop = frame[ey:ey2, ex:ex2]
-            embedding = recognizer.extract_embedding(face_crop)
-            
-            # Match against database
-            if embedding is not None and len(database) > 0:
-                match_name, score = database.find_match(embedding, threshold)
-                
-                if match_name:
-                    color = (0, 0, 255)  # Red - threat
-                    label = f"THREAT {score:.0%}"
+            proc_frame = frame.copy()
+            t0 = time.time()
+            if enhance:
+                proc_frame = enhance_brightness(proc_frame)
+            faces = recognizer.detect_faces(proc_frame)
+            for (x, y, w, h) in faces:
+                ex, ey, ew, eh = expand_bbox(x, y, w, h, proc_frame.shape)
+                ex2, ey2 = min(proc_frame.shape[1], ex + ew), min(proc_frame.shape[0], ey + eh)
+                if ex2 <= ex or ey2 <= ey:
+                    continue
+                face_crop = proc_frame[ey:ey2, ex:ex2]
+                embedding = recognizer.extract_embedding(face_crop)
+                if embedding is not None and len(database) > 0:
+                    match_name, score = database.find_match(embedding, threshold)
+                    if match_name:
+                        color = (0, 0, 255)
+                        label = f"THREAT {score:.0%}"
+                    else:
+                        color = (0, 255, 0)
+                        label = f"Safe {score:.0%}"
                 else:
-                    color = (0, 255, 0)  # Green - safe
-                    label = f"Safe {score:.0%}"
+                    color = (128, 128, 128)
+                    label = "No DB" if len(database) == 0 else "No embed"
+                x2, y2 = min(proc_frame.shape[1], x + w), min(proc_frame.shape[0], y + h)
+                cv2.rectangle(proc_frame, (x, y), (x2, y2), color, 2)
+                label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+                cv2.rectangle(proc_frame, (x, y - 25), (x + label_size[0] + 10, y), color, -1)
+                cv2.putText(proc_frame, label, (x + 5, y - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            fps = 1.0 / (time.time() - t0) if faces else 0.0
+            # Info overlay
+            brightness_status = "ON" if enhance else "OFF"
+            info_lines = [
+                f"ArcFace (512D) | Threshold: {threshold:.2f}",
+                f"Brightness: {brightness_status} | FPS: {fps:.1f}",
+                f"Enrolled: {len(database)} face(s)",
+            ]
+            if video_writer:
+                info_lines.append("RECORDING...")
+            for i, line in enumerate(info_lines):
+                cv2.putText(proc_frame, line, (10, 25 + i * 25),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            with model_lock:
+                recog_state['result'] = proc_frame
+                recog_state['fps'] = fps
+            time.sleep(0.01)
+
+    recog_thread = threading.Thread(target=recognition_worker, daemon=True)
+    recog_thread.start()
+
+    running = True
+    try:
+        while running:
+            if not paused:
+                ret, raw_frame = cap.read()
+                if not ret:
+                    break
+                last_frame = raw_frame.copy()
             else:
-                color = (128, 128, 128)  # Gray - no database
-                label = "No DB" if len(database) == 0 else "No embed"
-            
-            # Draw on original detection box
-            x2, y2 = min(frame.shape[1], x + w), min(frame.shape[0], y + h)
-            cv2.rectangle(frame, (x, y), (x2, y2), color, 2)
-            
-            # Label
-            label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
-            cv2.rectangle(frame, (x, y - 25), (x + label_size[0] + 10, y), color, -1)
-            cv2.putText(frame, label, (x + 5, y - 7), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-        
-        # FPS calculation
-        frame_time = (time.time() - frame_start) * 1000
-        frame_times.append(frame_time)
-        if len(frame_times) > 30:
-            frame_times.pop(0)
-        fps = 1000 / np.mean(frame_times) if frame_times else 0
-        
-        # Info overlay
-        brightness_status = "ON" if enhance_brightness_enabled else "OFF"
-        info_lines = [
-            f"ArcFace (512D) | Threshold: {threshold:.2f}",
-            f"Brightness: {brightness_status} | FPS: {fps:.1f}",
-            f"Enrolled: {len(database)} face(s)",
-        ]
-        for i, line in enumerate(info_lines):
-            cv2.putText(frame, line, (10, 25 + i * 25),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-        
-        cv2.imshow("Face Recognition - Press Q to quit", frame)
-        
-        # Handle keys
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('q') or key == 27:
-            break
-        elif key == ord('b'):
-            enhance_brightness_enabled = not enhance_brightness_enabled
-            print(f"Brightness: {'ON' if enhance_brightness_enabled else 'OFF'}")
-        elif key == ord('r'):
-            print("\nRe-enrolling faces...")
-            database = load_watch_list(recognizer, watch_list_dir)
-        elif key == ord('+') or key == ord('='):
-            threshold = min(1.0, threshold + 0.05)
-            print(f"Threshold: {threshold:.2f}")
-        elif key == ord('-'):
-            threshold = max(0.0, threshold - 0.05)
-            print(f"Threshold: {threshold:.2f}")
-        elif key == ord('s'):
-            save_dir.mkdir(parents=True, exist_ok=True)
-            filename = save_dir / f"capture_{int(time.time())}.jpg"
-            cv2.imwrite(str(filename), frame)
-            print(f"Saved: {filename}")
-        elif key == ord(' '):
-            paused = not paused
-            print(f"{'PAUSED' if paused else 'RESUMED'}")
-    
-    cap.release()
-    cv2.destroyAllWindows()
-    print("\nDone!")
+                if last_frame is None:
+                    continue
+                raw_frame = last_frame.copy()
+
+            # Write raw frame to video if recording and writer is open
+            if video_writer is not None:
+                if video_writer.isOpened():
+                    video_writer.write(raw_frame)
+
+            # Always update recognition thread with latest frame
+            with model_lock:
+                recog_state['frame'] = raw_frame.copy()
+                recog_state['enhance'] = enhance_brightness_enabled
+
+            # Compose split view: left=raw, right=model
+            with model_lock:
+                model_frame = recog_state['result']
+            if model_frame is not None:
+                if model_frame.shape != raw_frame.shape:
+                    model_frame = cv2.resize(model_frame, (raw_frame.shape[1], raw_frame.shape[0]))
+                split = np.hstack((raw_frame, model_frame))
+            else:
+                split = np.hstack((raw_frame, raw_frame))
+            cv2.imshow("[Left] Live Video  |  [Right] Face Recognition", split)
+
+            # Handle keys
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q') or key == 27:
+                running = False
+            elif key == ord('b'):
+                enhance_brightness_enabled = not enhance_brightness_enabled
+                print(f"Brightness: {'ON' if enhance_brightness_enabled else 'OFF'}")
+            elif key == ord('r'):
+                print("\nRe-enrolling faces...")
+                database = load_watch_list(recognizer, watch_list_dir)
+            elif key == ord('+') or key == ord('='):
+                threshold = min(1.0, threshold + 0.05)
+                print(f"Threshold: {threshold:.2f}")
+            elif key == ord('-'):
+                threshold = max(0.0, threshold - 0.05)
+                print(f"Threshold: {threshold:.2f}")
+            elif key == ord('s'):
+                save_dir.mkdir(parents=True, exist_ok=True)
+                filename = save_dir / f"capture_{int(time.time())}.jpg"
+                cv2.imwrite(str(filename), raw_frame)
+                print(f"Saved: {filename}")
+            elif key == ord(' '):
+                paused = not paused
+                print(f"{'PAUSED' if paused else 'RESUMED'}")
+            frame_count += 1
+    finally:
+        # Signal recognition thread to stop and wait for it
+        stop_event.set()
+        recog_thread.join(timeout=2.0)
+        # Release resources
+        cap.release()
+        if video_writer is not None:
+            if video_writer.isOpened():
+                video_writer.release()
+        cv2.destroyAllWindows()
+        # Small delay to ensure file buffers are flushed
+        time.sleep(0.2)
+        print("\nDone!")
 
 
 def main():

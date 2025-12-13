@@ -36,14 +36,20 @@ Controls:
                         help="Camera device index (default: 0)")
     parser.add_argument("-s", "--savedir", type=Path, default=None,
                         help="Directory for saved frames (default: ./captures)")
-    
+    parser.add_argument("-r", "--record", action="store_true",
+                        help="Enable video recording to ./captures/recording_<timestamp>.mp4")
+    parser.add_argument("--record-fps", type=float, default=15.0,
+                        help="Recording FPS (default: 15.0)")
+
     args = parser.parse_args()
-    
+
     run_viewfinder(
         watch_list_dir=args.watchlist,
         threshold=args.threshold,
         camera_id=args.camera,
         save_dir=args.savedir,
+        record=args.record,
+        record_fps=args.record_fps,
     )
 
 
