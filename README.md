@@ -30,24 +30,6 @@ A **threat detection** security system for Raspberry Pi using **face recognition
 
 ---
 
-## Distrobox (Optional)
-
-For isolated development or deployment:
-
-```bash
-# Create container
-distrobox assemble create --file distrobox.ini
-
-# Enter container
-distrobox enter iot-security
-
-# Inside container, run as usual
-./run.sh setup
-./run.sh detect --camera
-```
-
----
-
 ## Features
 
 | Feature | Description |
@@ -135,7 +117,6 @@ recognizer = FaceRecognizer(embedding_backend="opencv_dnn")
 ├── data/
 │   ├── raw/faces/watch_list/  # Watch list photos
 │   └── models/              # ML models
-├── distrobox.ini            # Distrobox container config
 ├── requirements.txt         # Python dependencies
 └── run.sh                   # Run script
 ```
