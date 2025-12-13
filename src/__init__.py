@@ -1,17 +1,13 @@
 """IoT Personal Home Security source package."""
 
 from .face import (
-    FaceDetector,
-    DetectedFace,
-    FaceRecognizer,
-    RecognitionResult,
-    FaceCategory,
+    ArcFaceRecognizer,
+    FaceDatabase,
+    run_viewfinder,
 )
 
 __all__ = [
-    "FaceDetector",
-    "DetectedFace",
-    "FaceRecognizer",
-    "RecognitionResult",
-    "FaceCategory",
+    "ArcFaceRecognizer",
+    "FaceDatabase",
+    "run_viewfinder",
 ]

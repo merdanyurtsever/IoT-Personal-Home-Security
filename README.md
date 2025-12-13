@@ -1,8 +1,8 @@
 # IoT Personal Home Security System
 
-A **threat detection** security system for Raspberry Pi using **face recognition** and **sound classification**.
+A **threat detection** security system for Raspberry Pi using **ArcFace face recognition** and **sound classification**.
 
-> **Key Concept**: Detects people you want to be **alerted about** — by photo (watch list) or physical features (threat profile).
+> **Key Concept**: Detects people you want to be **alerted about** — by photo (watch list).
 
 ---
 
@@ -12,21 +12,15 @@ A **threat detection** security system for Raspberry Pi using **face recognition
 # Setup environment
 ./run.sh setup
 
-# Start the API server
-./run.sh start
+# Run face recognition viewfinder
+python -m src.face
 
-# Test face detection
-./run.sh detect
-
-# Live camera detection
-./run.sh detect --camera
+# With custom watch list
+python -m src.face --watchlist /path/to/faces --threshold 0.35
 
 # Run tests
 ./run.sh test
 ```
-
-**API:** http://localhost:8000  
-**Docs:** http://localhost:8000/docs
 
 ---
 
@@ -35,64 +29,49 @@ A **threat detection** security system for Raspberry Pi using **face recognition
 | Feature | Description |
 |---------|-------------|
 | **Watch List** | Alert when specific people (by photo) are detected |
-| **Threat Profile** | Alert by physical attributes (glasses, beard, etc.) |
+| **ArcFace Recognition** | State-of-the-art 512D embeddings (InsightFace buffalo_l) |
+| **Brightness Enhancement** | CLAHE preprocessing for dim lighting |
 | **Sound Detection** | Glass breaking, door knocks, alarms |
-| **Motion Trigger** | PIR sensor activates camera |
 
 ---
 
-## Face Backends
+## Face Recognition
 
-### Detectors
-
-| Backend | Description |
-|---------|-------------|
-| `opencv_dnn` | SSD ResNet (default) |
-| `haar_cascade` | Fast, lightweight |
-| `mediapipe` | Good for ARM64 |
-| `dlib` | Accurate + landmarks |
-
-### Recognizers
-
-| Backend | Embedding |
-|---------|-----------|
-| `opencv_dnn` | 128D (default) |
-| `dlib` | 128D |
-| `mobilenetv2` | 512D |
-| `tflite` | 512D |
+Uses **ArcFace** via InsightFace's `buffalo_l` model (ResNet-50, 512D embeddings).
 
 ```python
-from src import FaceDetector, FaceRecognizer
+from src.face import ArcFaceRecognizer, FaceDatabase
 
-detector = FaceDetector(backend="opencv_dnn")
-recognizer = FaceRecognizer(embedding_backend="opencv_dnn")
+# Initialize
+recognizer = ArcFaceRecognizer(model_name="buffalo_l")
+database = FaceDatabase()
+
+# Add to watch list
+import cv2
+image = cv2.imread("suspect.jpg")
+faces = recognizer.detect(image)
+if faces:
+    embedding = recognizer.extract_embedding(image, faces[0])
+    database.add("suspect_name", embedding)
+
+# Process live frame
+matches = []
+for face in recognizer.detect(frame):
+    emb = recognizer.extract_embedding(frame, face)
+    results = database.search(emb, threshold=0.35)
+    matches.extend(results)
 ```
 
 ---
 
-## CLI Commands
+## Viewfinder Controls
 
-```bash
-./run.sh start              # Start API server
-./run.sh detect             # Test face detection
-./run.sh detect --camera    # Live camera
-./run.sh detect -i img.jpg  # Single image
-./run.sh test               # Run tests
-./run.sh face detect        # Use face module directly
-./run.sh face api           # Face module API
-```
-
----
-
-## API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v1/health` | GET | Health check |
-| `/api/v1/faces` | GET | List faces |
-| `/api/v1/faces` | POST | Upload face |
-| `/api/v1/faces/{id}` | DELETE | Remove face |
-| `/api/v1/recognize` | POST | Recognize face |
+| Key | Action |
+|-----|--------|
+| `B` | Toggle brightness enhancement |
+| `R` | Re-enroll faces from watch list |
+| `+`/`-` | Adjust recognition threshold |
+| `Q`/`ESC` | Quit |
 
 ---
 
@@ -100,15 +79,12 @@ recognizer = FaceRecognizer(embedding_backend="opencv_dnn")
 
 ```
 ├── src/
-│   ├── face/                # 📦 INDEPENDENT Face Module (can be shared)
+│   ├── face/                # 📦 Face Recognition Module
+│   │   ├── viewfinder.py    # ArcFace recognizer + live viewfinder
 │   │   ├── __init__.py      # Public API
 │   │   ├── __main__.py      # Run as: python -m src.face
-│   │   ├── cli.py           # Standalone CLI
-│   │   ├── api.py           # Standalone REST API
-│   │   ├── detection/       # Face detectors
-│   │   ├── recognition/     # Face recognizers & embeddings
-│   │   ├── pipeline.py      # FaceSecurityPipeline
-│   │   └── utils.py         # Image utilities
+│   │   ├── requirements.txt # Module dependencies
+│   │   └── README.md        # Module documentation
 │   ├── audio/               # Sound classification
 │   ├── sensors/             # Hardware interfaces
 │   ├── api.py               # Main system API
@@ -121,59 +97,20 @@ recognizer = FaceRecognizer(embedding_backend="opencv_dnn")
 └── run.sh                   # Run script
 ```
 
-### Face Module (Independent)
-
-The `src/face/` module can be used independently:
-
-```bash
-# Run standalone
-python -m src.face detect --image photo.jpg
-python -m src.face detect --camera
-python -m src.face api --port 8000
-python -m src.face test
-
-# Or use in code
-from src.face import FaceDetector, FaceRecognizer
-
-detector = FaceDetector()
-recognizer = FaceRecognizer()
-```
-
----
-
-## Configuration
-
-`config/config.yaml`:
-
-```yaml
-face_detection:
-  backend: opencv_dnn  # haar_cascade, mediapipe, dlib
-
-face_recognition:
-  embedding_backend: opencv_dnn  # dlib, tflite, mobilenetv2
-  similarity_threshold: 0.6
-
-api:
-  port: 8000
-```
-
 ---
 
 ## Add Watch List
 
-**File system:**
+Place photos in `data/raw/faces/watch_list/`:
+
 ```
 data/raw/faces/watch_list/
-└── person_name/
-    ├── photo1.jpg
-    └── photo2.jpg
+├── suspect1.jpg
+├── suspect2.jpg
+└── person_name.png
 ```
 
-**API:**
-```bash
-curl -X POST http://localhost:8000/faces \
-  -F "name=John" -F "image=@photo.jpg"
-```
+Filenames become the identity labels (without extension).
 
 ---
 
