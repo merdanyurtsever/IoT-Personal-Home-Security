@@ -59,7 +59,11 @@ src/                          # Main source code
 ├── alerts.py                 # Notification & alarm management
 ├── api.py                    # FastAPI REST endpoints
 ├── cli.py                    # Command-line interface
-├── visual/                   # Face detection & recognition
+├── face/                     # Face detection & recognition (standalone module)
+│   ├── __init__.py           # Module exports
+│   ├── __main__.py           # Entry point (python -m src.face)
+│   ├── cli.py                # Standalone face CLI
+│   ├── api.py                # Standalone face API
 │   ├── face_detector.py      # Multi-backend face detection
 │   ├── face_recognizer.py    # Face embedding & matching
 │   ├── pipeline.py           # Detection → Recognition flow
@@ -86,9 +90,9 @@ src/                          # Main source code
 
 | Class | File | What It Does |
 |-------|------|--------------|
-| `FaceDetector` | `visual/face_detector.py` | Multi-backend face detection |
-| `FaceRecognizer` | `visual/face_recognizer.py` | Embedding extraction & matching |
-| `OpenCVDNNDetector` | `visual/detection/opencv_dnn.py` | SSD-based face detection |
+| `FaceDetector` | `face/face_detector.py` | Multi-backend face detection |
+| `FaceRecognizer` | `face/face_recognizer.py` | Embedding extraction & matching |
+| `OpenCVDNNDetector` | `face/detection/opencv_dnn.py` | SSD-based face detection |
 | `SoundClassifier` | `audio/classifier.py` | Classifies audio (TFLite, ONNX, sklearn) |
 | `FeatureExtractor` | `audio/features.py` | MFCC & Mel spectrogram extraction |
 | `AudioPreprocessor` | `audio/preprocessing.py` | Audio loading & normalization |
@@ -268,18 +272,17 @@ source .venv/bin/activate  # Linux/Mac
 # .venv\Scripts\activate   # Windows
 
 # Install
-pip install -r requirements.txt  # or requirements-arm64.txt for ARM
-pip install -e .
+pip install -r requirements.txt
 
 # Test
 ./run.sh demo
 ```
 
-### ARM64 VM Testing
+### ARM64 / Raspberry Pi Deployment
 
 ```bash
-# Use ARM64-specific requirements (no TensorFlow, uses TFLite runtime)
-pip install -r requirements-arm64.txt
+# Install dependencies (same requirements file works on all platforms)
+pip install -r requirements.txt
 ./run.sh demo
 ```
 
@@ -589,7 +592,7 @@ handlers:
 loggers:
   src:
     level: INFO
-  src.visual:
+  src.face:
     level: DEBUG  # More verbose for debugging
 ```
 
@@ -667,10 +670,10 @@ pytest tests/test_face_detection.py -k "test_opencv"  # Specific test
 
 ### Adding a New Detection Backend
 
-1. Create `src/visual/detection/mybackend.py`
+1. Create `src/face/detection/mybackend.py`
 2. Inherit from `BaseFaceDetector`
 3. Implement `detect(image) -> List[DetectedFace]`
-4. Register in `src/visual/detection/__init__.py`
+4. Register in `src/face/detection/__init__.py`
 
 ```python
 from .base import BaseFaceDetector

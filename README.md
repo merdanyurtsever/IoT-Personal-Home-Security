@@ -8,56 +8,43 @@ A **threat detection** security system for Raspberry Pi using **face recognition
 
 ## Quick Start
 
-### Docker (Recommended)
-
 ```bash
-# Build Docker image
-./run.sh build
+# Setup environment
+./run.sh setup
 
-# Start the system
+# Start the API server
 ./run.sh start
 
-# Start API server only
-./run.sh api
-
-# Run tests
-./run.sh test
-
-# Face detection test
+# Test face detection
 ./run.sh detect
 
 # Live camera detection
 ./run.sh detect --camera
 
-# Interactive shell for debugging
-./run.sh shell
-
-# View logs
-./run.sh logs --follow
-```
-
-### Using Make
-
-```bash
-make build     # Build Docker image
-make start     # Start system
-make api       # Start API
-make test      # Run tests
-make shell     # Debug shell
-make help      # Show all commands
-```
-
-### Local Mode (without Docker)
-
-```bash
-# Use --local flag to run with Python venv instead of Docker
-./run.sh start --local
-./run.sh api --local
-./run.sh test --local
+# Run tests
+./run.sh test
 ```
 
 **API:** http://localhost:8000  
 **Docs:** http://localhost:8000/docs
+
+---
+
+## Distrobox (Optional)
+
+For isolated development or deployment:
+
+```bash
+# Create container
+distrobox assemble create --file distrobox.ini
+
+# Enter container
+distrobox enter iot-security
+
+# Inside container, run as usual
+./run.sh setup
+./run.sh detect --camera
+```
 
 ---
 
@@ -104,13 +91,13 @@ recognizer = FaceRecognizer(embedding_backend="opencv_dnn")
 ## CLI Commands
 
 ```bash
-# Inside container (docker compose run --rm app <command>)
-start              # Start API server
-detect             # Test face detection
-detect --camera    # Live camera
-detect -i img.jpg  # Single image
-test               # Test components
-test --all         # Include hardware
+./run.sh start              # Start API server
+./run.sh detect             # Test face detection
+./run.sh detect --camera    # Live camera
+./run.sh detect -i img.jpg  # Single image
+./run.sh test               # Run tests
+./run.sh face detect        # Use face module directly
+./run.sh face api           # Face module API
 ```
 
 ---
@@ -144,15 +131,13 @@ test --all         # Include hardware
 │   ├── sensors/             # Hardware interfaces
 │   ├── api.py               # Main system API
 │   └── cli.py               # Main system CLI
-├── docker/
-│   ├── Dockerfile           # Single Dockerfile for all platforms
-│   └── docker-compose.yml
 ├── config/config.yaml       # Configuration
 ├── data/
 │   ├── raw/faces/watch_list/  # Watch list photos
 │   └── models/              # ML models
-├── requirements.txt         # Single requirements file
-└── run.sh                   # Simple run script
+├── distrobox.ini            # Distrobox container config
+├── requirements.txt         # Python dependencies
+└── run.sh                   # Run script
 ```
 
 ### Face Module (Independent)
@@ -193,19 +178,6 @@ api:
 
 ---
 
-## Camera Access (Docker)
-
-For live camera detection in Docker, the container runs with elevated privileges to access `/dev/video0`:
-
-```bash
-# This is handled automatically by run.sh
-./run.sh detect --camera
-```
-
-**Note:** On systems with SELinux (Fedora/RHEL), camera access requires `--privileged --security-opt label=disable --user root`.
-
----
-
 ## Add Watch List
 
 **File system:**
@@ -227,8 +199,8 @@ curl -X POST http://localhost:8000/faces \
 ## Raspberry Pi
 
 ```bash
-docker compose build
-docker compose up
+./run.sh setup
+./run.sh start
 ```
 
 | Hardware | GPIO |

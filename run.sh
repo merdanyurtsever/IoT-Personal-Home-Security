@@ -10,12 +10,6 @@
 #   ./run.sh detect --camera # Live camera detection
 #   ./run.sh test           # Run tests
 #   ./run.sh help           # Show help
-#
-# Docker mode (default if Docker available):
-#   ./run.sh docker start   # Run in container
-#
-# Local mode:
-#   ./run.sh --local start  # Use local Python
 
 set -e
 
@@ -25,7 +19,6 @@ cd "$SCRIPT_DIR"
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
@@ -50,6 +43,7 @@ show_help() {
     echo "  detect -i FILE    Detect faces in image"
     echo "  recognize         Test face recognition"
     echo "  test              Run tests"
+    echo "  setup             Setup Python environment"
     echo "  help              Show this help"
     echo ""
     echo "Face module (standalone):"
@@ -57,13 +51,7 @@ show_help() {
     echo "  face api          Face API server"
     echo "  face test         Test face module"
     echo ""
-    echo "Docker:"
-    echo "  docker build      Build container"
-    echo "  docker start      Run in container"
-    echo "  docker shell      Shell in container"
-    echo ""
     echo "Options:"
-    echo "  --local           Use local Python (not Docker)"
     echo "  --camera, -c      Use camera input"
     echo "  --image, -i FILE  Process image file"
     echo ""
@@ -71,80 +59,38 @@ show_help() {
     echo "  ./run.sh start"
     echo "  ./run.sh detect --camera"
     echo "  ./run.sh face api --port 8000"
-    echo "  ./run.sh docker start"
 }
 
 # ============================================================
-# DOCKER COMMANDS
+# SETUP
 # ============================================================
 
-docker_build() {
-    print_info "Building Docker image..."
-    docker build -f docker/Dockerfile -t iot-home-security .
-    print_success "Image built: iot-home-security"
+setup_env() {
+    print_info "Setting up Python environment..."
+    
+    if [[ ! -d ".venv" ]]; then
+        python3 -m venv .venv
+        print_success "Created virtual environment"
+    fi
+    
+    source .venv/bin/activate
+    pip install --upgrade pip
+    pip install -r requirements.txt
+    print_success "Dependencies installed"
 }
 
-docker_run() {
+# ============================================================
+# COMMANDS
+# ============================================================
+
+run_cmd() {
     local cmd="${1:-start}"
     shift 2>/dev/null || true
     
-    local docker_opts="-it --rm"
-    local mount_opts="-v $SCRIPT_DIR/src:/app/src:ro -v $SCRIPT_DIR/data:/app/data -v $SCRIPT_DIR/config:/app/config:ro"
-    
-    # Check for camera flag
-    if [[ "$*" == *"--camera"* ]] || [[ "$*" == *"-c"* ]]; then
-        if [[ -e /dev/video0 ]]; then
-            docker_opts="$docker_opts --device /dev/video0 --privileged"
-            print_info "Camera device attached"
-        fi
-        if [[ -n "$DISPLAY" ]]; then
-            docker_opts="$docker_opts -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix:ro"
-            xhost +local:docker 2>/dev/null || true
-        fi
+    # Activate venv if available
+    if [[ -f ".venv/bin/activate" ]]; then
+        source .venv/bin/activate
     fi
-    
-    # Port for API
-    if [[ "$cmd" == "start" ]] || [[ "$cmd" == "api" ]]; then
-        docker_opts="$docker_opts -p 8000:8000"
-    fi
-    
-    case "$cmd" in
-        start|api)
-            docker run $docker_opts $mount_opts iot-home-security \
-                python -m src.cli start "$@"
-            ;;
-        detect)
-            docker run $docker_opts $mount_opts iot-home-security \
-                python -m src.cli detect "$@"
-            ;;
-        recognize)
-            docker run $docker_opts $mount_opts iot-home-security \
-                python -m src.cli recognize "$@"
-            ;;
-        face)
-            docker run $docker_opts $mount_opts iot-home-security \
-                python -m src.face "$@"
-            ;;
-        test)
-            docker run $docker_opts $mount_opts iot-home-security \
-                python -m pytest tests/ -v "$@"
-            ;;
-        shell)
-            docker run $docker_opts $mount_opts iot-home-security bash
-            ;;
-        *)
-            docker run $docker_opts $mount_opts iot-home-security "$cmd" "$@"
-            ;;
-    esac
-}
-
-# ============================================================
-# LOCAL COMMANDS (Python directly)
-# ============================================================
-
-run_local() {
-    local cmd="${1:-start}"
-    shift 2>/dev/null || true
     
     case "$cmd" in
         start|api)
@@ -173,28 +119,18 @@ run_local() {
 # ============================================================
 
 main() {
-    local use_docker=false
-    local use_local=false
     local cmd=""
     local args=()
     
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --local)
-                use_local=true
-                shift
-                ;;
-            docker)
-                use_docker=true
-                shift
-                ;;
             help|--help|-h)
                 show_help
                 exit 0
                 ;;
-            build)
-                docker_build
+            setup)
+                setup_env
                 exit 0
                 ;;
             *)
@@ -211,23 +147,7 @@ main() {
     # Default command
     [[ -z "$cmd" ]] && cmd="start"
     
-    # Run the command
-    if [[ "$use_docker" == true ]]; then
-        docker_run "$cmd" "${args[@]}"
-    elif [[ "$use_local" == true ]]; then
-        run_local "$cmd" "${args[@]}"
-    else
-        # Default: try local first, fall back to docker
-        if command -v python &> /dev/null && python -c "import src" 2>/dev/null; then
-            run_local "$cmd" "${args[@]}"
-        elif command -v docker &> /dev/null; then
-            print_info "Using Docker..."
-            docker_run "$cmd" "${args[@]}"
-        else
-            print_error "Python or Docker required"
-            exit 1
-        fi
-    fi
+    run_cmd "$cmd" "${args[@]}"
 }
 
 main "$@"

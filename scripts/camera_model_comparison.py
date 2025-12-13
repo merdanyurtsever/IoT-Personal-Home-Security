@@ -69,8 +69,8 @@ class OpenFaceBackend(ModelBackend):
     embedding_size = 128
     
     def __init__(self):
-        from src.visual.detection import OpenCVDNNDetector
-        from src.visual.recognition.embeddings import OpenCVDNNEmbeddingBackend
+        from src.face.detection import OpenCVDNNDetector
+        from src.face.recognition.embeddings import OpenCVDNNEmbeddingBackend
         self.detector = OpenCVDNNDetector()
         self.embedder = OpenCVDNNEmbeddingBackend()
     
@@ -91,8 +91,8 @@ class OpenFaceCLAHEBackend(ModelBackend):
     embedding_size = 128
     
     def __init__(self):
-        from src.visual.detection import OpenCVDNNDetector
-        from src.visual.recognition.embeddings import OpenCVDNNEmbeddingBackend
+        from src.face.detection import OpenCVDNNDetector
+        from src.face.recognition.embeddings import OpenCVDNNEmbeddingBackend
         self.detector = OpenCVDNNDetector()
         self.embedder = OpenCVDNNEmbeddingBackend()
     

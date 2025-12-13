@@ -8,12 +8,16 @@
 #   make test      - Run tests
 #   make help      - Show all commands
 
-.PHONY: help start api detect camera test clean docker-build docker-run
+.PHONY: help start api detect camera test clean setup
 
 # Default target
 help:
 	@echo "IoT Home Security - Commands"
 	@echo "============================"
+	@echo ""
+	@echo "Setup:"
+	@echo "  make setup        Setup Python environment"
+	@echo "  make install      Install dependencies"
 	@echo ""
 	@echo "Running:"
 	@echo "  make start        Start API server"
@@ -22,21 +26,29 @@ help:
 	@echo "  make test         Run tests"
 	@echo ""
 	@echo "Face Module (standalone):"
-	@echo "  make face-detect  Face detection (standalone module)"
-	@echo "  make face-api     Face API server only"
+	@echo "  make face-detect  Face detection"
+	@echo "  make face-api     Face API server"
 	@echo "  make face-test    Test face module"
-	@echo ""
-	@echo "Docker:"
-	@echo "  make docker-build Build container"
-	@echo "  make docker-run   Run in container"
-	@echo "  make docker-shell Shell in container"
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  make clean        Clean generated files"
-	@echo "  make install      Install dependencies"
+	@echo "  make lint         Format and lint code"
 
 # ============================================================
-# RUNNING (Local)
+# SETUP
+# ============================================================
+
+setup:
+	python3 -m venv .venv
+	.venv/bin/pip install --upgrade pip
+	.venv/bin/pip install -r requirements.txt
+	@echo "✓ Setup complete. Run: source .venv/bin/activate"
+
+install:
+	pip install -r requirements.txt
+
+# ============================================================
+# RUNNING
 # ============================================================
 
 start:
@@ -71,29 +83,8 @@ face-test:
 	python -m src.face test
 
 # ============================================================
-# DOCKER
-# ============================================================
-
-docker-build:
-	docker build -f docker/Dockerfile -t iot-home-security .
-
-docker-run:
-	docker run -p 8000:8000 -v ./data:/app/data iot-home-security
-
-docker-shell:
-	docker run -it --rm iot-home-security bash
-
-docker-camera:
-	docker run -it --rm --device /dev/video0 \
-		-e DISPLAY=${DISPLAY} -v /tmp/.X11-unix:/tmp/.X11-unix \
-		iot-home-security python -m src.face detect --camera
-
-# ============================================================
 # DEVELOPMENT
 # ============================================================
-
-install:
-	pip install -r requirements.txt
 
 install-dev:
 	pip install -r requirements.txt

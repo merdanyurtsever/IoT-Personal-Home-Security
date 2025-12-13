@@ -125,11 +125,18 @@ def cmd_detect(args):
                 for frame in camera.stream():
                     faces = detector.detect(frame.image)
                     output = detector.draw_detections(frame.image, faces)
-                    cv2.imshow("Face Detection", output)
-                    if cv2.waitKey(1) & 0xFF == ord('q'):
-                        break
+                    try:
+                        cv2.imshow("Face Detection", output)
+                        if cv2.waitKey(1) & 0xFF == ord('q'):
+                            break
+                    except cv2.error:
+                        # GUI not available (headless mode)
+                        logger.info(f"Detected {len(faces)} faces (headless mode)")
                         
-                cv2.destroyAllWindows()
+                try:
+                    cv2.destroyAllWindows()
+                except cv2.error:
+                    pass  # GUI not available
         else:
             # Quick test
             test_img = np.zeros((480, 640, 3), dtype=np.uint8)

@@ -110,7 +110,7 @@ def test_openface_opencv() -> Optional[ModelResult]:
     print("=" * 60)
     
     try:
-        from src.visual import OpenCVDNNEmbeddingBackend
+        from src.face import OpenCVDNNEmbeddingBackend
         
         start = time.time()
         backend = OpenCVDNNEmbeddingBackend()
@@ -134,7 +134,7 @@ def test_openface_clahe() -> Optional[ModelResult]:
     print("=" * 60)
     
     try:
-        from src.visual.recognition.embeddings import OpenCVDNNEmbeddingBackend
+        from src.face.recognition.embeddings import OpenCVDNNEmbeddingBackend
         
         start = time.time()
         inner_backend = OpenCVDNNEmbeddingBackend()
@@ -171,7 +171,7 @@ def test_mobilenetv2() -> Optional[ModelResult]:
     print("=" * 60)
     
     try:
-        from src.visual import MobileNetV2EmbeddingBackend
+        from src.face import MobileNetV2EmbeddingBackend
         
         start = time.time()
         backend = MobileNetV2EmbeddingBackend()

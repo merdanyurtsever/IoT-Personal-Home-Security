@@ -222,19 +222,34 @@ class Camera:
         if self._open_opencv():
             logger.info("Camera reconnected successfully")
     
-    def stream(self) -> Generator[Frame, None, None]:
+    def stream(self, max_retries: int = 5) -> Generator[Frame, None, None]:
         """Generator that yields frames continuously.
+        
+        Args:
+            max_retries: Maximum number of consecutive failures before giving up
         
         Yields:
             Frame objects
         """
+        consecutive_failures = 0
+        
         while True:
             frame = self.read()
             if frame is not None:
+                consecutive_failures = 0  # Reset on success
                 yield frame
             else:
+                consecutive_failures += 1
+                
+                if consecutive_failures >= max_retries:
+                    logger.error(f"Camera failed after {max_retries} attempts. Stopping.")
+                    break
+                
                 if not self.config.auto_reconnect:
                     break
+                    
+                # Add delay before retry to prevent crash loop
+                time.sleep(0.5)
     
     def start_stream(self, callback: Callable[[Frame], None]):
         """Start background streaming with callback.
