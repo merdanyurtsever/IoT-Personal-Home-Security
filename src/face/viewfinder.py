@@ -24,20 +24,15 @@ import numpy as np
 
 
 def find_watch_list_dir() -> Optional[Path]:
-    """Find watch list directory from common locations."""
-    # Try paths relative to current working directory
+    """Find watch list directory from local face folder, current working directory, or root data folder."""
     candidates = [
         Path("watch_list"),
         Path("faces"),
+        Path("face/watch_list"),
+        Path("face/faces"),
         Path("data/watch_list"),
         Path("data/raw/faces/watch_list"),
     ]
-    # Also try relative to this module
-    module_dir = Path(__file__).parent
-    candidates.extend([
-        module_dir.parent.parent / "data" / "raw" / "faces" / "watch_list",
-        module_dir.parent.parent / "data" / "watch_list",
-    ])
     for path in candidates:
         if path.exists() and path.is_dir():
             return path
