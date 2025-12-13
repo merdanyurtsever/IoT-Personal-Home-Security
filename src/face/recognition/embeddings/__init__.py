@@ -9,12 +9,15 @@ from .dlib import DlibEmbeddingBackend
 from .tflite import TFLiteEmbeddingBackend
 from .mobilenet import MobileNetV2EmbeddingBackend
 from .opencv_dnn import OpenCVDNNEmbeddingBackend
+from .insightface_backend import ArcFaceEmbeddingBackend, MobileFaceNetEmbeddingBackend
 
 EMBEDDING_BACKENDS = {
     "dlib": DlibEmbeddingBackend,
     "tflite": TFLiteEmbeddingBackend,
     "mobilenetv2": MobileNetV2EmbeddingBackend,
     "opencv_dnn": OpenCVDNNEmbeddingBackend,
+    "arcface": ArcFaceEmbeddingBackend,
+    "mobilefacenet": MobileFaceNetEmbeddingBackend,
 }
 
 __all__ = [
@@ -23,5 +26,7 @@ __all__ = [
     "TFLiteEmbeddingBackend",
     "MobileNetV2EmbeddingBackend",
     "OpenCVDNNEmbeddingBackend",
+    "ArcFaceEmbeddingBackend",
+    "MobileFaceNetEmbeddingBackend",
     "EMBEDDING_BACKENDS",
 ]

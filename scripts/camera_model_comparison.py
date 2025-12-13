@@ -51,6 +51,29 @@ def apply_clahe(image: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
 
 
+def expand_face_bbox(x, y, w, h, frame_shape, margin=0.25):
+    """Expand face bounding box by margin for better embedding accuracy.
+    
+    Adding margin around the face improves recognition accuracy by:
+    1. Including more facial context (forehead, chin, ears)
+    2. Reducing edge artifacts from tight crops
+    3. Giving alignment algorithms more room to work
+    """
+    frame_h, frame_w = frame_shape[:2]
+    
+    # Calculate margin in pixels
+    margin_w = int(w * margin)
+    margin_h = int(h * margin)
+    
+    # Expand bbox with margin, clamp to frame bounds
+    new_x = max(0, x - margin_w)
+    new_y = max(0, y - margin_h)
+    new_w = min(frame_w - new_x, w + 2 * margin_w)
+    new_h = min(frame_h - new_y, h + 2 * margin_h)
+    
+    return new_x, new_y, new_w, new_h
+
+
 class ModelBackend:
     """Base class for model backends."""
     name: str = "Base"
@@ -64,15 +87,23 @@ class ModelBackend:
 
 
 class OpenFaceBackend(ModelBackend):
-    """OpenFace via OpenCV DNN."""
+    """OpenFace embeddings with RetinaFace detection for stability."""
     name = "OpenFace (128D)"
     embedding_size = 128
     
     def __init__(self):
-        from src.face.detection import OpenCVDNNDetector
         from src.face.recognition.embeddings import OpenCVDNNEmbeddingBackend
-        self.detector = OpenCVDNNDetector()
         self.embedder = OpenCVDNNEmbeddingBackend()
+        # Use InsightFace's RetinaFace for more stable detection
+        try:
+            from insightface.app import FaceAnalysis
+            self.app = FaceAnalysis(name='buffalo_sc', providers=['CPUExecutionProvider'])
+            self.app.prepare(ctx_id=-1, det_size=(640, 640))
+            self.use_retinaface = True
+        except ImportError:
+            from src.face.detection import OpenCVDNNDetector
+            self.detector = OpenCVDNNDetector()
+            self.use_retinaface = False
     
     def extract(self, face_image: np.ndarray) -> Optional[np.ndarray]:
         try:
@@ -81,20 +112,37 @@ class OpenFaceBackend(ModelBackend):
             return None
     
     def detect_faces(self, frame: np.ndarray) -> List[Tuple[int, int, int, int]]:
-        faces = self.detector.detect(frame)
-        return [(f.x, f.y, f.width, f.height) for f in faces]
+        if self.use_retinaface:
+            faces = self.app.get(frame)
+            result = []
+            for face in faces:
+                bbox = face.bbox.astype(int)
+                x1, y1, x2, y2 = bbox
+                result.append((x1, y1, x2 - x1, y2 - y1))
+            return result
+        else:
+            faces = self.detector.detect(frame)
+            return [(f.x, f.y, f.width, f.height) for f in faces]
 
 
 class OpenFaceCLAHEBackend(ModelBackend):
-    """OpenFace with CLAHE preprocessing."""
+    """OpenFace with CLAHE preprocessing and RetinaFace detection."""
     name = "OpenFace+CLAHE (128D)"
     embedding_size = 128
     
     def __init__(self):
-        from src.face.detection import OpenCVDNNDetector
         from src.face.recognition.embeddings import OpenCVDNNEmbeddingBackend
-        self.detector = OpenCVDNNDetector()
         self.embedder = OpenCVDNNEmbeddingBackend()
+        # Use InsightFace's RetinaFace for more stable detection
+        try:
+            from insightface.app import FaceAnalysis
+            self.app = FaceAnalysis(name='buffalo_sc', providers=['CPUExecutionProvider'])
+            self.app.prepare(ctx_id=-1, det_size=(640, 640))
+            self.use_retinaface = True
+        except ImportError:
+            from src.face.detection import OpenCVDNNDetector
+            self.detector = OpenCVDNNDetector()
+            self.use_retinaface = False
     
     def extract(self, face_image: np.ndarray) -> Optional[np.ndarray]:
         try:
@@ -104,8 +152,17 @@ class OpenFaceCLAHEBackend(ModelBackend):
             return None
     
     def detect_faces(self, frame: np.ndarray) -> List[Tuple[int, int, int, int]]:
-        faces = self.detector.detect(frame)
-        return [(f.x, f.y, f.width, f.height) for f in faces]
+        if self.use_retinaface:
+            faces = self.app.get(frame)
+            result = []
+            for face in faces:
+                bbox = face.bbox.astype(int)
+                x1, y1, x2, y2 = bbox
+                result.append((x1, y1, x2 - x1, y2 - y1))
+            return result
+        else:
+            faces = self.detector.detect(frame)
+            return [(f.x, f.y, f.width, f.height) for f in faces]
 
 
 class FaceNetBackend(ModelBackend):
@@ -155,23 +212,36 @@ class FaceNetBackend(ModelBackend):
 
 
 class ArcFaceBackend(ModelBackend):
-    """ArcFace via InsightFace."""
+    """ArcFace via InsightFace - High accuracy model."""
     name = "ArcFace (512D)"
     embedding_size = 512
     
     def __init__(self):
         from insightface.app import FaceAnalysis
-        self.app = FaceAnalysis(name='buffalo_sc', providers=['CPUExecutionProvider'])
+        # Use buffalo_l for highest accuracy (ResNet-50 backbone)
+        self.app = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'])
         self.app.prepare(ctx_id=-1, det_size=(640, 640))
+        # Get the recognition model for direct extraction on crops
+        self.rec_model = self.app.models.get('recognition')
     
     def extract(self, face_image: np.ndarray) -> Optional[np.ndarray]:
         try:
-            # ArcFace needs the full image to detect+extract
+            # First try with InsightFace's full pipeline (detection + recognition)
             faces = self.app.get(face_image)
+            
             if not faces:
-                # Try with resized image
-                resized = cv2.resize(face_image, (112, 112))
-                faces = self.app.get(resized)
+                # If no face detected, image might be a pre-cropped face
+                # Try with padding to give detector more context
+                h, w = face_image.shape[:2]
+                if max(h, w) < 200:
+                    pad = max(h, w)
+                    padded = np.zeros((h + 2*pad, w + 2*pad, 3), dtype=np.uint8)
+                    padded[pad:pad+h, pad:pad+w] = face_image
+                    faces = self.app.get(padded)
+            
+            if not faces and self.rec_model is not None:
+                # Still no detection - use recognition model directly on crop
+                return self._extract_direct(face_image)
             
             if faces:
                 embedding = faces[0].embedding
@@ -180,6 +250,29 @@ class ArcFaceBackend(ModelBackend):
                     embedding = embedding / norm
                 return embedding.astype(np.float32)
             return None
+        except:
+            return None
+    
+    def _extract_direct(self, face_image: np.ndarray) -> Optional[np.ndarray]:
+        """Extract embedding directly from recognition model on pre-cropped face."""
+        try:
+            # Preprocess: resize to 112x112, convert BGR->RGB, normalize
+            face_resized = cv2.resize(face_image, (112, 112))
+            face_rgb = cv2.cvtColor(face_resized, cv2.COLOR_BGR2RGB)
+            face_input = np.transpose(face_rgb, (2, 0, 1)).astype(np.float32)
+            face_input = (face_input - 127.5) / 127.5  # Normalize to [-1, 1]
+            face_input = np.expand_dims(face_input, axis=0)
+            
+            # Run recognition model
+            embedding = self.rec_model.session.run(
+                self.rec_model.output_names,
+                {self.rec_model.input_name: face_input}
+            )[0][0]
+            
+            norm = np.linalg.norm(embedding)
+            if norm > 0:
+                embedding = embedding / norm
+            return embedding.astype(np.float32)
         except:
             return None
     
@@ -203,13 +296,23 @@ class MobileFaceNetBackend(ModelBackend):
         # buffalo_s uses MobileFaceNet for recognition (smaller, faster than buffalo_l)
         self.app = FaceAnalysis(name='buffalo_s', providers=['CPUExecutionProvider'])
         self.app.prepare(ctx_id=-1, det_size=(320, 320))  # Smaller detection for speed
+        self.rec_model = self.app.models.get('recognition')
     
     def extract(self, face_image: np.ndarray) -> Optional[np.ndarray]:
         try:
             faces = self.app.get(face_image)
+            
             if not faces:
-                resized = cv2.resize(face_image, (112, 112))
-                faces = self.app.get(resized)
+                # Try with padding for small cropped faces
+                h, w = face_image.shape[:2]
+                if max(h, w) < 200:
+                    pad = max(h, w)
+                    padded = np.zeros((h + 2*pad, w + 2*pad, 3), dtype=np.uint8)
+                    padded[pad:pad+h, pad:pad+w] = face_image
+                    faces = self.app.get(padded)
+            
+            if not faces and self.rec_model is not None:
+                return self._extract_direct(face_image)
             
             if faces:
                 embedding = faces[0].embedding
@@ -218,6 +321,27 @@ class MobileFaceNetBackend(ModelBackend):
                     embedding = embedding / norm
                 return embedding.astype(np.float32)
             return None
+        except:
+            return None
+    
+    def _extract_direct(self, face_image: np.ndarray) -> Optional[np.ndarray]:
+        """Extract embedding directly from recognition model on pre-cropped face."""
+        try:
+            face_resized = cv2.resize(face_image, (112, 112))
+            face_rgb = cv2.cvtColor(face_resized, cv2.COLOR_BGR2RGB)
+            face_input = np.transpose(face_rgb, (2, 0, 1)).astype(np.float32)
+            face_input = (face_input - 127.5) / 127.5
+            face_input = np.expand_dims(face_input, axis=0)
+            
+            embedding = self.rec_model.session.run(
+                self.rec_model.output_names,
+                {self.rec_model.input_name: face_input}
+            )[0][0]
+            
+            norm = np.linalg.norm(embedding)
+            if norm > 0:
+                embedding = embedding / norm
+            return embedding.astype(np.float32)
         except:
             return None
     
@@ -241,13 +365,22 @@ class RetinaFaceBackend(ModelBackend):
         # buffalo_l uses RetinaFace for detection (highest accuracy)
         self.app = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'])
         self.app.prepare(ctx_id=-1, det_size=(640, 640))
+        self.rec_model = self.app.models.get('recognition')
     
     def extract(self, face_image: np.ndarray) -> Optional[np.ndarray]:
         try:
             faces = self.app.get(face_image)
+            
             if not faces:
-                resized = cv2.resize(face_image, (112, 112))
-                faces = self.app.get(resized)
+                h, w = face_image.shape[:2]
+                if max(h, w) < 200:
+                    pad = max(h, w)
+                    padded = np.zeros((h + 2*pad, w + 2*pad, 3), dtype=np.uint8)
+                    padded[pad:pad+h, pad:pad+w] = face_image
+                    faces = self.app.get(padded)
+            
+            if not faces and self.rec_model is not None:
+                return self._extract_direct(face_image)
             
             if faces:
                 embedding = faces[0].embedding
@@ -256,6 +389,27 @@ class RetinaFaceBackend(ModelBackend):
                     embedding = embedding / norm
                 return embedding.astype(np.float32)
             return None
+        except:
+            return None
+    
+    def _extract_direct(self, face_image: np.ndarray) -> Optional[np.ndarray]:
+        """Extract embedding directly from recognition model on pre-cropped face."""
+        try:
+            face_resized = cv2.resize(face_image, (112, 112))
+            face_rgb = cv2.cvtColor(face_resized, cv2.COLOR_BGR2RGB)
+            face_input = np.transpose(face_rgb, (2, 0, 1)).astype(np.float32)
+            face_input = (face_input - 127.5) / 127.5
+            face_input = np.expand_dims(face_input, axis=0)
+            
+            embedding = self.rec_model.session.run(
+                self.rec_model.output_names,
+                {self.rec_model.input_name: face_input}
+            )[0][0]
+            
+            norm = np.linalg.norm(embedding)
+            if norm > 0:
+                embedding = embedding / norm
+            return embedding.astype(np.float32)
         except:
             return None
     
@@ -406,18 +560,33 @@ def main():
     current_model_idx = 0
     current_model = models[current_model_idx]
     
+    # Helper function to enhance brightness of an image
+    def enhance_image(img: np.ndarray) -> np.ndarray:
+        """Apply CLAHE brightness enhancement to image."""
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        l = clahe.apply(l)
+        lab = cv2.merge([l, a, b])
+        return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+    
     # Enroll watch list faces with current model
     def enroll_faces():
         nonlocal watch_list_embeddings
         watch_list_embeddings = []
         print(f"\nEnrolling faces with {current_model.name}...")
         
-        for img_name, img in watch_list_images:
+        for img_name, original_img in watch_list_images:
+            # Apply brightness enhancement to watch list images
+            img = enhance_image(original_img)
+            
             # Detect faces in the image
             faces = current_model.detect_faces(img)
             if faces:
                 x, y, w, h = faces[0]
-                face_crop = img[max(0,y):y+h, max(0,x):x+w]
+                # Expand bbox for better embedding accuracy (same as live processing)
+                ex, ey, ew, eh = expand_face_bbox(x, y, w, h, img.shape, margin=0.25)
+                face_crop = img[max(0,ey):ey+eh, max(0,ex):ex+ew]
                 emb = current_model.extract(face_crop)
                 if emb is not None:
                     watch_list_embeddings.append((img_name, emb))
@@ -436,12 +605,17 @@ def main():
     watch_list_embeddings = []
     enroll_faces()
     
-    # Recognition threshold (adjustable per model)
+    # Recognition threshold (optimized per model)
+    # Lower = more strict (fewer false positives)
+    # Higher = more lenient (fewer false negatives)
     thresholds = {
-        "OpenFace (128D)": 0.5,
-        "OpenFace+CLAHE (128D)": 0.5,
-        "FaceNet (512D)": 0.6,
-        "ArcFace (512D)": 0.4,
+        "OpenFace (128D)": 0.55,          # 128D needs higher threshold
+        "OpenFace+CLAHE (128D)": 0.55,    # CLAHE improves slightly
+        "FaceNet (512D)": 0.50,           # FaceNet is well-calibrated
+        "ArcFace (512D)": 0.35,           # ArcFace is very discriminative
+        "MobileFaceNet (512D)": 0.38,     # MobileFaceNet slightly less
+        "RetinaFace+ArcFace (512D)": 0.35, # Same as ArcFace
+        "YOLO+ArcFace (512D)": 0.35,      # Same as ArcFace
     }
     
     # Open camera
@@ -461,12 +635,16 @@ def main():
     
     print()
     print("Controls:")
-    print("  1-4    : Select model directly")
+    print(f"  1-{min(9, len(models))}    : Select model directly")
     print("  SPACE  : Cycle to next model")
+    print("  B      : Toggle brightness enhancement")
     print("  R      : Re-enroll faces (after adding new photos)")
     print("  +/-    : Adjust threshold")
     print("  Q/ESC  : Quit")
     print()
+    
+    # Brightness enhancement flag
+    enhance_brightness = True
     
     # Stats
     frame_times = []
@@ -480,6 +658,17 @@ def main():
         
         frame_start = time.time()
         
+        # Apply brightness enhancement if enabled
+        if enhance_brightness:
+            # Convert to LAB color space for better brightness adjustment
+            lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+            l, a, b = cv2.split(lab)
+            # Apply CLAHE to L channel
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            l = clahe.apply(l)
+            lab = cv2.merge([l, a, b])
+            frame = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+        
         # Get current threshold
         threshold = thresholds.get(current_model.name, 0.5)
         
@@ -491,14 +680,18 @@ def main():
         
         # Process each face
         for (x, y, w, h) in faces:
-            # Ensure bounds are valid
-            x, y = max(0, x), max(0, y)
-            x2, y2 = min(frame.shape[1], x + w), min(frame.shape[0], y + h)
+            # Expand bbox for better embedding accuracy
+            ex, ey, ew, eh = expand_face_bbox(x, y, w, h, frame.shape, margin=0.25)
             
-            if x2 <= x or y2 <= y:
+            # Ensure bounds are valid
+            ex, ey = max(0, ex), max(0, ey)
+            ex2, ey2 = min(frame.shape[1], ex + ew), min(frame.shape[0], ey + eh)
+            
+            if ex2 <= ex or ey2 <= ey:
                 continue
             
-            face_crop = frame[y:y2, x:x2]
+            # Use expanded crop for embedding extraction
+            face_crop = frame[ey:ey2, ex:ex2]
             
             # Extract embedding
             recog_start = time.time()
@@ -527,7 +720,8 @@ def main():
                 color = (0, 255, 0)
                 label = f"Safe {best_score:.0%}"
             
-            # Draw rectangle
+            # Draw rectangle using ORIGINAL detection box (x, y, w, h)
+            x2, y2 = min(frame.shape[1], x + w), min(frame.shape[0], y + h)
             cv2.rectangle(frame, (x, y), (x2, y2), color, 2)
             
             # Draw label background
@@ -553,9 +747,11 @@ def main():
         avg_recog = np.mean(recognition_times) if recognition_times else 0
         
         # Draw info overlay
+        brightness_status = "ON" if enhance_brightness else "OFF"
         info_lines = [
             f"Model: {current_model.name}",
             f"Threshold: {threshold:.2f} (+/- to adjust)",
+            f"Brightness: {brightness_status} (B to toggle)",
             f"FPS: {fps:.1f}",
             f"Detect: {avg_detect:.0f}ms | Recog: {avg_recog:.0f}ms",
             f"Enrolled: {len(watch_list_embeddings)} face(s)",
@@ -591,7 +787,7 @@ def main():
             frame_times.clear()
             detection_times.clear()
             recognition_times.clear()
-        elif key in [ord('1'), ord('2'), ord('3'), ord('4')]:
+        elif key in [ord('1'), ord('2'), ord('3'), ord('4'), ord('5'), ord('6'), ord('7'), ord('8'), ord('9')]:
             idx = int(chr(key)) - 1
             if idx < len(models):
                 current_model_idx = idx
@@ -601,6 +797,9 @@ def main():
                 frame_times.clear()
                 detection_times.clear()
                 recognition_times.clear()
+        elif key == ord('b'):  # Toggle brightness enhancement
+            enhance_brightness = not enhance_brightness
+            print(f"\nBrightness enhancement: {'ON' if enhance_brightness else 'OFF'}")
         elif key == ord('r'):  # Re-enroll
             print("\nReloading watch list...")
             watch_list_images = load_watch_list_images()
