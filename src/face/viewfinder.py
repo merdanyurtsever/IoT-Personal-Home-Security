@@ -6,7 +6,7 @@ Can be used standalone or integrated into other applications.
 
 Usage:
     python -m src.face.viewfinder [--watch-list PATH] [--threshold 0.35]
-    
+
 Controls:
     B      : Toggle brightness enhancement
     R      : Re-enroll faces from watch list
@@ -54,7 +54,7 @@ def enhance_brightness(image: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
 
-def expand_bbox(x: int, y: int, w: int, h: int, 
+def expand_bbox(x: int, y: int, w: int, h: int,
                 frame_shape: Tuple[int, ...], margin: float = 0.25) -> Tuple[int, int, int, int]:
     """Expand face bounding box by margin for better embedding accuracy."""
     frame_h, frame_w = frame_shape[:2]
@@ -69,14 +69,14 @@ def expand_bbox(x: int, y: int, w: int, h: int,
 
 class ArcFaceRecognizer:
     """ArcFace-based face recognition using InsightFace.
-    
+
     Uses buffalo_l model (ResNet-50 backbone) for highest accuracy.
     Provides both face detection and 512D embedding extraction.
     """
-    
+
     def __init__(self, model_name: str = "buffalo_l", det_size: Tuple[int, int] = (640, 640)):
         """Initialize ArcFace recognizer.
-        
+
         Args:
             model_name: InsightFace model pack name
                 - buffalo_l: Highest accuracy (ResNet-50, ~280MB)
@@ -91,18 +91,18 @@ class ArcFaceRecognizer:
                 "InsightFace not installed. Install with:\n"
                 "  pip install insightface onnxruntime"
             )
-        
+
         self.app = FaceAnalysis(name=model_name, providers=['CPUExecutionProvider'])
         self.app.prepare(ctx_id=-1, det_size=det_size)
         self.rec_model = self.app.models.get('recognition')
         self.embedding_dim = 512
-    
+
     def detect_faces(self, frame: np.ndarray) -> List[Tuple[int, int, int, int]]:
         """Detect faces in frame.
-        
+
         Args:
             frame: BGR image
-            
+
         Returns:
             List of (x, y, width, height) tuples for each detected face
         """
@@ -113,20 +113,20 @@ class ArcFaceRecognizer:
             x1, y1, x2, y2 = bbox
             result.append((x1, y1, x2 - x1, y2 - y1))
         return result
-    
+
     def extract_embedding(self, face_image: np.ndarray) -> Optional[np.ndarray]:
         """Extract 512D face embedding.
-        
+
         Args:
             face_image: BGR face image (can be cropped or full image)
-            
+
         Returns:
             Normalized 512D embedding vector or None if extraction fails
         """
         try:
             # Try full pipeline (detection + recognition)
             faces = self.app.get(face_image)
-            
+
             if not faces:
                 # Try with padding for small/cropped faces
                 h, w = face_image.shape[:2]
@@ -135,22 +135,22 @@ class ArcFaceRecognizer:
                     padded = np.zeros((h + 2*pad, w + 2*pad, 3), dtype=np.uint8)
                     padded[pad:pad+h, pad:pad+w] = face_image
                     faces = self.app.get(padded)
-            
+
             if not faces and self.rec_model is not None:
                 # Direct extraction on pre-cropped face
                 return self._extract_direct(face_image)
-            
+
             if faces:
                 embedding = faces[0].embedding
                 norm = np.linalg.norm(embedding)
                 if norm > 0:
                     embedding = embedding / norm
                 return embedding.astype(np.float32)
-            
+
             return None
         except Exception:
             return None
-    
+
     def _extract_direct(self, face_image: np.ndarray) -> Optional[np.ndarray]:
         """Extract embedding directly from recognition model (for pre-cropped faces)."""
         try:
@@ -160,12 +160,12 @@ class ArcFaceRecognizer:
             face_input = np.transpose(face_rgb, (2, 0, 1)).astype(np.float32)
             face_input = (face_input - 127.5) / 127.5
             face_input = np.expand_dims(face_input, axis=0)
-            
+
             embedding = self.rec_model.session.run(
                 self.rec_model.output_names,
                 {self.rec_model.input_name: face_input}
             )[0][0]
-            
+
             norm = np.linalg.norm(embedding)
             if norm > 0:
                 embedding = embedding / norm
@@ -176,41 +176,41 @@ class ArcFaceRecognizer:
 
 class FaceDatabase:
     """Simple in-memory face database for enrolled faces."""
-    
+
     def __init__(self):
         self.faces: List[Tuple[str, np.ndarray]] = []
-    
+
     def add(self, name: str, embedding: np.ndarray) -> None:
         """Add a face to the database."""
         self.faces.append((name, embedding))
-    
+
     def clear(self) -> None:
         """Clear all enrolled faces."""
         self.faces.clear()
-    
+
     def find_match(self, embedding: np.ndarray, threshold: float = 0.35) -> Tuple[Optional[str], float]:
         """Find the best matching face.
-        
+
         Args:
             embedding: Query embedding
             threshold: Minimum similarity for a match
-            
+
         Returns:
             Tuple of (name, score) or (None, 0.0) if no match
         """
         best_name = None
         best_score = 0.0
-        
+
         for name, enrolled_emb in self.faces:
             score = cosine_similarity(embedding, enrolled_emb)
             if score > best_score:
                 best_score = score
                 best_name = name
-        
+
         if best_score >= threshold:
             return best_name, best_score
         return None, best_score
-    
+
     def __len__(self) -> int:
         return len(self.faces)
 

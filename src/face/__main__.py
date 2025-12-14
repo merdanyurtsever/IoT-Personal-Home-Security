@@ -13,7 +13,7 @@ from pathlib import Path
 def main():
     """Run the ArcFace viewfinder."""
     from .viewfinder import run_viewfinder
-    
+
     import argparse
     parser = argparse.ArgumentParser(
         description="ArcFace Face Recognition Viewfinder",
@@ -23,7 +23,7 @@ Controls:
     q/ESC   - Quit
     r       - Reload watch list
     s       - Save current frame
-    b       - Toggle brightness enhancement  
+    b       - Toggle brightness enhancement
     SPACE   - Pause/Resume
     +/-     - Adjust threshold
 """

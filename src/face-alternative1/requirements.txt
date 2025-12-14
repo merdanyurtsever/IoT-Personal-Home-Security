@@ -1,0 +1,10 @@
+# Face-alternative1 (MobileFaceNet) Module Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core
+numpy>=1.20.0
+opencv-python>=4.5.0
+
+# Face Recognition (InsightFace + ONNX Runtime)
+insightface>=0.7.0
+onnxruntime>=1.10.0
