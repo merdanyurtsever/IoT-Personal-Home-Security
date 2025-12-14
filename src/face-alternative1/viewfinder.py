@@ -27,8 +27,6 @@ def find_watch_list_dir() -> Optional[Path]:
 	candidates = [
 		Path("watch_list"),
 		Path("faces"),
-		Path("face-alternative1/watch_list"),
-		Path("face-alternative1/faces"),
 		Path("data/watch_list"),
 		Path("data/raw/faces/watch_list"),
 	]
@@ -59,58 +57,54 @@ def expand_bbox(x: int, y: int, w: int, h: int, frame_shape: Tuple[int, ...], ma
 	return new_x, new_y, new_w, new_h
 
 
-# Recognizer using RetinaFace for detection and antelopev2 for recognition
 
-# Recognizer using serengil/retinaface for detection and antelopev2 for recognition
 
-# Recognizer using serengil/retinaface for detection and antelopev2 for recognition (direct model)
+# Recognizer using OpenCV Haar Cascade for detection and LBPHFaceRecognizer for recognition
 class MobileFaceNetRecognizer:
-	"""Face recognition using serengil/retinaface for detection and antelopev2 for recognition (direct model)."""
-	def __init__(self, rec_model: str = "antelopev2"):
-		try:
-			from retinaface import RetinaFace
-		except ImportError:
-			raise ImportError(
-				"retina-face not installed. Install with:\n  pip install retina-face"
-			)
-		try:
-			from insightface.model_zoo import get_model
-		except ImportError:
-			raise ImportError(
-				"InsightFace not installed. Install with:\n  pip install insightface onnxruntime"
-			)
-		self.retinaface = RetinaFace
-		self.recognizer = get_model(rec_model)
-		self.recognizer.prepare(ctx_id=-1)
-		self.embedding_dim = 512
+	"""Face recognition using OpenCV Haar Cascade for detection and LBPHFaceRecognizer for recognition."""
+	def __init__(self):
+		self.detector = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+		self.recognizer = cv2.face.LBPHFaceRecognizer_create()
+		self.label_map = {}  # label_id -> name
+		self.name_map = {}   # name -> label_id
+		self.next_label = 0
+		self.trained = False
 
 	def detect_faces(self, frame: np.ndarray) -> List[Tuple[int, int, int, int]]:
-		results = self.retinaface.detect_faces(frame)
-		bboxes = []
-		if isinstance(results, dict):
-			for key in results:
-				face = results[key]
-				x1, y1, w, h = face['facial_area']
-				bboxes.append((x1, y1, w - x1, h - y1))
-		return bboxes
+		gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+		faces = self.detector.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
+		return [tuple(face) for face in faces]
 
-	def extract_embedding(self, face_image: np.ndarray) -> Optional[np.ndarray]:
-		try:
-			# Preprocess: resize, BGR->RGB, normalize
-			import cv2
-			import numpy as np
-			face_resized = cv2.resize(face_image, (112, 112))
-			face_rgb = cv2.cvtColor(face_resized, cv2.COLOR_BGR2RGB)
-			face_input = np.transpose(face_rgb, (2, 0, 1)).astype(np.float32)
-			face_input = (face_input - 127.5) / 127.5
-			face_input = np.expand_dims(face_input, axis=0)
-			embedding = self.recognizer.get_embedding(face_input)[0]
-			norm = np.linalg.norm(embedding)
-			if norm > 0:
-				embedding = embedding / norm
-			return embedding.astype(np.float32)
-		except Exception:
-			return None
+	def add_face(self, name: str, face_img: np.ndarray):
+		gray = cv2.cvtColor(face_img, cv2.COLOR_BGR2GRAY)
+		if name not in self.name_map:
+			label = self.next_label
+			self.name_map[name] = label
+			self.label_map[label] = name
+			self.next_label += 1
+		else:
+			label = self.name_map[name]
+		if not hasattr(self, 'train_faces'):
+			self.train_faces = []
+			self.train_labels = []
+		self.train_faces.append(gray)
+		self.train_labels.append(label)
+
+	def train(self):
+		if hasattr(self, 'train_faces') and len(self.train_faces) > 0:
+			self.recognizer.train(self.train_faces, np.array(self.train_labels))
+			self.trained = True
+
+	def recognize(self, face_img: np.ndarray, threshold: float = 0.35, max_confidence: float = 200.0):
+		"""Returns (is_threat, match_score) where match_score is in [0,1] (higher is better)."""
+		if not self.trained:
+			return False, None
+		gray = cv2.cvtColor(face_img, cv2.COLOR_BGR2GRAY)
+		label, confidence = self.recognizer.predict(gray)
+		capped = min(confidence, max_confidence)
+		match_score = max(0.0, 1.0 - (capped / max_confidence))
+		is_threat = match_score >= threshold
+		return is_threat, match_score
 
 
 class FaceDatabase:
@@ -136,12 +130,12 @@ class FaceDatabase:
 		return len(self.faces)
 
 def load_watch_list(recognizer: MobileFaceNetRecognizer, watch_list_dir: Path, apply_enhancement: bool = True) -> FaceDatabase:
-	db = FaceDatabase()
+	enrolled = 0
 	if not watch_list_dir.exists():
 		print(f"Watch list directory not found: {watch_list_dir}")
-		return db
+		return enrolled
 	print(f"\nLoading watch list from: {watch_list_dir}")
-	for ext in ["*.jpg", "*.jpeg", "*.png", "*.JPG", "*.JPEG", "*.PNG"]:
+	for ext in ["*.jpg", "*.jpeg", "*.png"]:
 		for img_path in watch_list_dir.glob(ext):
 			img = cv2.imread(str(img_path))
 			if img is None:
@@ -151,18 +145,16 @@ def load_watch_list(recognizer: MobileFaceNetRecognizer, watch_list_dir: Path, a
 			faces = recognizer.detect_faces(img)
 			if faces:
 				x, y, w, h = faces[0]
-				ex, ey, ew, eh = expand_bbox(x, y, w, h, img.shape)
-				face_crop = img[ey:ey+eh, ex:ex+ew]
-				embedding = recognizer.extract_embedding(face_crop)
+				face_crop = img[y:y+h, x:x+w]
 			else:
-				embedding = recognizer.extract_embedding(img)
-			if embedding is not None:
-				db.add(img_path.stem, embedding)
-				print(f"  ✓ Enrolled: {img_path.name}")
-			else:
-				print(f"  ✗ Failed: {img_path.name}")
-	print(f"Enrolled {len(db)} face(s)")
-	return db
+				face_crop = img
+			name = img_path.stem
+			recognizer.add_face(name, face_crop)
+			enrolled += 1
+			print(f"  ✓ Enrolled: {img_path.name}")
+	recognizer.train()
+	print(f"Enrolled {enrolled} face(s)")
+	return enrolled
 
 def run_viewfinder(watch_list_dir: Optional[Path] = None,
 				   threshold: float = 0.35,
@@ -179,13 +171,13 @@ def run_viewfinder(watch_list_dir: Optional[Path] = None,
 		save_dir = Path("captures")
 	video_writer = None
 	print("=" * 60)
-	print("FACE RECOGNITION VIEWFINDER (MobileFaceNet)")
+	print("FACE RECOGNITION VIEWFINDER (OpenCV Haar+LBPH)")
 	print("=" * 60)
-	print("\nModel: MobileFaceNet (128D)")
-	print("\nLoading model...")
-	recognizer = MobileFaceNetRecognizer(rec_model="antelopev2")
-	print("  ✓ Model loaded")
-	database = load_watch_list(recognizer, watch_list_dir)
+	print("\nModel: OpenCV Haar Cascade + LBPHFaceRecognizer")
+	print("\nLoading recognizer...")
+	recognizer = MobileFaceNetRecognizer()
+	print("  ✓ Recognizer ready")
+	enrolled = load_watch_list(recognizer, watch_list_dir)
 	print("\nOpening camera...")
 	cap = cv2.VideoCapture(camera_id)
 	if not cap.isOpened():
@@ -230,11 +222,17 @@ def run_viewfinder(watch_list_dir: Optional[Path] = None,
 		'enhance': True,
 	}
 	def recognition_worker():
+		frame_skip = 3  # Only process every 3rd frame for speed
+		counter = 0
 		while not stop_event.is_set():
 			with model_lock:
 				frame = recog_state['frame']
 				enhance = recog_state['enhance']
 			if frame is None:
+				time.sleep(0.01)
+				continue
+			counter += 1
+			if counter % frame_skip != 0:
 				time.sleep(0.01)
 				continue
 			proc_frame = frame.copy()
@@ -248,18 +246,19 @@ def run_viewfinder(watch_list_dir: Optional[Path] = None,
 				if ex2 <= ex or ey2 <= ey:
 					continue
 				face_crop = proc_frame[ey:ey2, ex:ex2]
-				embedding = recognizer.extract_embedding(face_crop)
-				if embedding is not None and len(database) > 0:
-					match_name, score = database.find_match(embedding, threshold)
-					if match_name:
-						color = (0, 0, 255)
-						label = f"THREAT {score:.0%}"
-					else:
-						color = (0, 255, 0)
-						label = f"Safe {score:.0%}"
-				else:
+				is_threat, match_score = recognizer.recognize(face_crop, threshold)
+				if enrolled == 0:
 					color = (128, 128, 128)
-					label = "No DB" if len(database) == 0 else "No embed"
+					label = "No DB"
+				elif match_score is None:
+					color = (128, 128, 128)
+					label = "No embed"
+				elif is_threat:
+					color = (0, 0, 255)
+					label = f"THREAT {match_score:.0%}"
+				else:
+					color = (0, 255, 0)
+					label = f"Safe {match_score:.0%}"
 				x2, y2 = min(proc_frame.shape[1], x + w), min(proc_frame.shape[0], y + h)
 				cv2.rectangle(proc_frame, (x, y), (x2, y2), color, 2)
 				label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
@@ -268,9 +267,9 @@ def run_viewfinder(watch_list_dir: Optional[Path] = None,
 			fps = 1.0 / (time.time() - t0) if faces else 0.0
 			brightness_status = "ON" if enhance else "OFF"
 			info_lines = [
-				f"MobileFaceNet (128D) | Threshold: {threshold:.2f}",
+				f"LBPH | Threshold: {threshold:.2f}",
 				f"Brightness: {brightness_status} | FPS: {fps:.1f}",
-				f"Enrolled: {len(database)} face(s)",
+				f"Enrolled: {enrolled} face(s)",
 			]
 			if video_writer:
 				info_lines.append("RECORDING...")
@@ -318,7 +317,7 @@ def run_viewfinder(watch_list_dir: Optional[Path] = None,
 				print(f"Brightness: {'ON' if enhance_brightness_enabled else 'OFF'}")
 			elif key == ord('r'):
 				print("\nRe-enrolling faces...")
-				database = load_watch_list(recognizer, watch_list_dir)
+				enrolled = load_watch_list(recognizer, watch_list_dir)
 			elif key == ord('+') or key == ord('='):
 				threshold = min(1.0, threshold + 0.05)
 				print(f"Threshold: {threshold:.2f}")
