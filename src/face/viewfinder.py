@@ -74,7 +74,7 @@ class ArcFaceRecognizer:
     Provides both face detection and 512D embedding extraction.
     """
 
-    def __init__(self, model_name: str = "buffalo_l", det_size: Tuple[int, int] = (640, 640)):
+    def __init__(self, model_name: str = "buffalo_l", det_size: Tuple[int, int] = (480, 480)):
         """Initialize ArcFace recognizer.
 
         Args:
